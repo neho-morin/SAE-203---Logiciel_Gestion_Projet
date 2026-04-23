@@ -2,7 +2,7 @@
 CREATE TABLE Utilisateur (
     id_utilisateur TEXT PRIMARY KEY,
     nom_utilisateur VARCHAR(50) NOT NULL,
-    prenom_utilisateur VARCHAR(50),
+    prénom_utilisateur VARCHAR(50),
     email VARCHAR(255),
     rôle VARCHAR(30)
 );
@@ -21,11 +21,11 @@ CREATE TABLE Projet (
 
 
 CREATE TABLE Tâche (
-    id_tache TEXT PRIMARY KEY,
-    description_tache TEXT,
+    id_tâche TEXT PRIMARY KEY,
+    description_tâche TEXT,
     date_creation DATETIME,
-    date_echeance DATETIME,
-    priorite TEXT CHECK(priorite IN ('basse', 'moyenne', 'haute')),
+    date_échéance DATETIME,
+    priorité TEXT CHECK(priorité IN ('basse', 'moyenne', 'haute')),
     status VARCHAR(20),
     id_projet TEXT NOT NULL,
     id_utilisateur TEXT NOT NULL,
@@ -39,8 +39,8 @@ CREATE TABLE Relance (
     date_envor DATETIME,
     type_relance VARCHAR(20),
     contenu TEXT,
-    id_tache TEXT NOT NULL,
+    id_tâche TEXT NOT NULL,
     id_utilisateur TEXT NOT NULL,
-    FOREIGN KEY (id_tache) REFERENCES Tache(id_tache),
+    FOREIGN KEY (id_tâche) REFERENCES Tache(id_tâche),
     FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur)
 );
