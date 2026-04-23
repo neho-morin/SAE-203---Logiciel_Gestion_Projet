@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 import services.relance_service as relance_service
 import services.mail_service as mail_service
+from config.settings import MAIL_SIMULATE
 
 _scheduler: BackgroundScheduler | None = None
 
@@ -8,9 +9,11 @@ _scheduler: BackgroundScheduler | None = None
 def run_check() -> None:
     """
     Point d'entrée du scheduler.
-    Détecte les tâches à relancer, simule l'envoi et logue en DB.
+    Détecte les tâches à relancer, envoie (ou simule) le mail, logue en DB.
     """
-    print("[NUDGE] Vérification des relances…")
+    mode = "Simulation" if MAIL_SIMULATE else "Réel"
+    print(f"[NUDGE] Vérification des relances… (mode {mode})")
+
     tasks_to_remind = relance_service.get_tasks_needing_reminder()
 
     if not tasks_to_remind:
@@ -20,14 +23,14 @@ def run_check() -> None:
     for task, type_ in tasks_to_remind:
         email = task.get("responsable_email") or ""
         subject, body = mail_service.build_message(task, type_)
-        success = mail_service.send(email, subject, body, simulate=True)
+        success = mail_service.send(email, subject, body)  # utilise MAIL_SIMULATE par défaut
 
         if success:
             relance_service.log(
                 tache_id=task["id"],
                 tache_titre=task["titre"],
                 email=email or "—",
-                mode="Simulation",
+                mode=mode,
                 type_=type_,
             )
             print(f"[NUDGE] Relance '{type_}' loguée pour : {task['titre']}")

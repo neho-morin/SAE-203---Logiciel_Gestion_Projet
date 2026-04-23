@@ -76,6 +76,11 @@ def get_tasks_needing_reminder() -> list[tuple[dict, str]]:
         else:
             continue
 
+        email = task.get("responsable_email") or ""
+        if not email:
+            print(f"[NUDGE] Tâche '{task['titre']}' ignorée — aucun email responsable.")
+            continue
+
         if not already_sent_today(task["id"], type_):
             results.append((task, type_))
 

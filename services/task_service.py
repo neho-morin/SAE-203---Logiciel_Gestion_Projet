@@ -1,35 +1,54 @@
 from database.db import get_connection
 
-_JOIN = """
-    SELECT t.*, u.nom AS responsable, u.email AS responsable_email
+_SELECT = """
+    SELECT
+        t.id,
+        t.project_id,
+        t.responsable_id,
+        t.titre,
+        t.description,
+        t.statut,
+        t.echeance,
+        t.priorite,
+        t.created_at,
+        u.nom   AS responsable,
+        u.email AS responsable_email
     FROM taches t
     LEFT JOIN utilisateurs u ON t.responsable_id = u.id
 """
 
 
+def _to_dict(row) -> dict:
+    return {k: row[k] for k in row.keys()}
+
+
 def get_all() -> list[dict]:
     conn = get_connection()
-    rows = conn.execute(_JOIN + "ORDER BY t.echeance ASC").fetchall()
-    return [dict(row) for row in rows]
+    rows = conn.execute(_SELECT + "ORDER BY t.echeance ASC").fetchall()
+    return [_to_dict(r) for r in rows]
 
 
 def get_by_project(project_id: int) -> list[dict]:
     conn = get_connection()
-    rows = conn.execute(_JOIN + "WHERE t.project_id = ? ORDER BY t.echeance ASC", (project_id,)).fetchall()
-    return [dict(row) for row in rows]
+    rows = conn.execute(
+        _SELECT + "WHERE t.project_id = ? ORDER BY t.echeance ASC",
+        (project_id,),
+    ).fetchall()
+    return [_to_dict(r) for r in rows]
 
 
 def get_by_id(task_id: int) -> dict | None:
     conn = get_connection()
-    row = conn.execute(_JOIN + "WHERE t.id = ?", (task_id,)).fetchone()
-    return dict(row) if row else None
+    row = conn.execute(_SELECT + "WHERE t.id = ?", (task_id,)).fetchone()
+    return _to_dict(row) if row else None
 
 
 def create(project_id: int, titre: str, description: str = "", responsable_id=None,
            echeance: str = "", priorite: str = "Moyenne", statut: str = "À faire") -> dict:
     conn = get_connection()
     cur = conn.execute(
-        """INSERT INTO taches (project_id, titre, description, responsable_id, echeance, priorite, statut)
+        """INSERT INTO taches
+               (project_id, titre, description, responsable_id, echeance, priorite, statut)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (project_id, titre, description, responsable_id, echeance, priorite, statut),
     )
@@ -41,7 +60,8 @@ def update(task_id: int, titre: str, description: str = "", responsable_id=None,
            echeance: str = "", priorite: str = "Moyenne", statut: str = "À faire") -> None:
     conn = get_connection()
     conn.execute(
-        """UPDATE taches SET titre=?, description=?, responsable_id=?, echeance=?, priorite=?, statut=?
+        """UPDATE taches
+           SET titre=?, description=?, responsable_id=?, echeance=?, priorite=?, statut=?
            WHERE id=?""",
         (titre, description, responsable_id, echeance, priorite, statut, task_id),
     )
