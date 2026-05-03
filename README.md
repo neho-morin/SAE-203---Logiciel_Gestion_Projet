@@ -11,7 +11,8 @@ Nudge est un logiciel de bureau permettant de centraliser le suivi de projets, p
 - **Windows 10/11** ou **Linux**
 - **Python 3.12+** → [Télécharger Python](https://www.python.org/downloads/)
 - **PyQt6** (bibliothèque d'interface graphique)
-
+- **APScheduler** (relances automatiques)
+- **python-dotenv** (configuration mail)
 ---
 
 ## 🚀 Installation et lancement
@@ -100,6 +101,25 @@ L'application détecte automatiquement :
 4. Choisissez le mode **Simulation** (démo) ou **Réel** (envoi SMTP)
 5. L'historique des relances est conservé dans la barre latérale
 
+### Configurer l'envoi de mail
+
+Pour envoyer de vrais mails (mode Réel), configurez le serveur SMTP directement depuis l'application :
+
+1. Cliquez sur **"Config. mail"** dans la barre du haut (bouton bleu)
+2. Renseignez les champs :
+   - **Serveur SMTP** : `smtp.gmail.com` (pré-rempli)
+   - **Port** : `587` (pré-rempli)
+   - **Email expéditeur** : votre adresse Gmail
+   - **Mot de passe** : un mot de passe d'application Gmail (voir ci-dessous)
+   - **Mode envoi** : choisissez **Réel (envoi SMTP)**
+3. Cliquez **Sauvegarder** — la configuration est enregistrée dans un fichier `.env`
+
+> **Mot de passe d'application Gmail :**
+> 1. Activez la validation en deux étapes sur votre compte Google
+> 2. Rendez-vous sur [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+> 3. Créez un mot de passe pour l'application "Nudge"
+> 4. Copiez le code de 16 lettres dans le champ "Mot de passe"
+
 ### Navigation
 - Cliquez sur le logo **✳ Nudge** en haut à gauche pour revenir à l'accueil
 - L'accueil affiche toutes vos cartes projets avec leur avancement
@@ -129,10 +149,11 @@ nudge/
 
 ## ⚠️ Notes importantes
 
-- Les données sont **stockées en mémoire** uniquement (pas de base de données encore). Elles seront perdues à la fermeture de l'application jusqu'à l'intégration de SQLite.
+- Les données sont **sauvegardées dans une base SQLite** (`nudge.db`) dans votre dossier utilisateur. Elles sont conservées entre chaque session.
 - Le mode **Simulation** est recommandé pour les démonstrations — aucun mail réel n'est envoyé.
-- Le fichier `.nudge_config.json` est créé dans votre dossier utilisateur pour mémoriser si l'onboarding a été vu.
-
+- Le mode **Réel** nécessite une configuration SMTP valide via le bouton **"Config. mail"**.
+- Les relances automatiques se déclenchent chaque jour à **8h00** si l'application est ouverte.
+- Le fichier `.env` contient vos identifiants mail — **ne le partagez jamais sur GitHub**.
 ---
 
 ## 🛠️ Stack technique
@@ -141,21 +162,21 @@ nudge/
 |-----------|-------------|
 | Langage | Python 3.12 |
 | Interface graphique | PyQt6 |
-| Base de données | SQLite *(à venir)* |
-| Relances automatiques | APScheduler *(à venir)* |
-| Envoi mail | smtplib *(à venir)* |
+| Base de données | SQLite 3 |
+| Relances automatiques | APScheduler 3.11 |
+| Envoi mail | smtplib + python-dotenv |
 
 ---
 
-## 👥 Équipe — Groupe 6
+### 👥 Équipe — Groupe 6
 
-| Membre | Rôle |
-|--------|------|
-| Jason Gironcel | Responsable technique |
-| Hugo Grimoult | Développeur Full Stack |
-| Antoine Landry | Chef de projet |
-| Lucas Mussard | Directeur artistique |
-| Ného Morin | — |
+| Membre | Rôle | Contribution |
+|--------|------|--------------|
+| Jason Gironcel | Responsable technique | Architecture, supervision |
+| Hugo Grimoult | Développeur Full Stack | Interface graphique (PyQt6) |
+| Antoine Landry | Chef de projet | Services mail, scheduler, BDD |
+| Lucas Mussard | Directeur artistique | Maquettes, identité visuelle |
+| Ného Morin | Testeur & Intégration | Lien BDD ↔ interface, tests, intégration des services |
 
 ---
 
