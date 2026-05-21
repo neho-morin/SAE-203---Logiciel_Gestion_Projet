@@ -1,0 +1,23 @@
+# Environnement Python
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Base de données locale
+*.db
+*.sqlite
+*.sqlite3
+
+# Variables d'environnement (tokens, mots de passe)
+.env
+
+# Configuration utilisateur Nudge
+.nudge_config.json
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
