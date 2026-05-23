@@ -1,10 +1,12 @@
 import os
 from dotenv import load_dotenv
+from config.paths import get_env_path, get_db_path
 
-load_dotenv()
+# Charge le .env depuis le bon emplacement (dev ou frozen)
+load_dotenv(str(get_env_path()), override=False)
 
 # Base de données
-DATABASE_PATH = os.path.join(os.path.expanduser("~"), "nudge.db")
+DATABASE_PATH = str(get_db_path())
 
 # SMTP — priorité aux clés NUDGE_SMTP_*, fallback sur SMTP_* pour rétrocompatibilité
 SMTP_HOST     = os.getenv("SMTP_HOST", "smtp.gmail.com")

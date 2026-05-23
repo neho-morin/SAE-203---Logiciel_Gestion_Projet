@@ -1,8 +1,9 @@
 import json
 import os
 from datetime import date
+from config.paths import get_relance_config_path
 
-CONFIG_PATH = os.path.join(os.path.expanduser("~"), ".nudge_relance_config.json")
+CONFIG_PATH = str(get_relance_config_path())
 
 _DEFAULTS: dict = {
     "scope": "late",

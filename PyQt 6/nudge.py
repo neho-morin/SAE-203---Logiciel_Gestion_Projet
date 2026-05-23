@@ -12,6 +12,7 @@ import services.relance_service  as relance_service
 import services.scheduler_service as scheduler_service
 import services.chat_history_service as chat_history_service
 import services.auth_service as auth_service
+from config.paths import get_env_path as _get_env_path, get_nudge_config_path as _get_nudge_config_path
 from config.permissions import (
     CREATE_PROJECT, CREATE_TASK, SEND_REMINDERS,
     CONFIGURE_SMTP, CONFIGURE_REMINDERS, USE_AI_ASSISTANT,
@@ -2035,7 +2036,7 @@ class SmtpConfigDialog(QDialog):
 
         # Lire les valeurs actuelles du .env (à la racine du projet)
         from pathlib import Path as _Path
-        env_path = _Path(__file__).resolve().parent.parent / ".env"
+        env_path = _get_env_path()
         env_vals = {}
         if env_path.exists():
             for line in env_path.read_text(encoding="utf-8").splitlines():
@@ -2112,7 +2113,7 @@ class SmtpConfigDialog(QDialog):
 
     def save_and_accept(self):
         from pathlib import Path as _Path
-        env_path = _Path(__file__).resolve().parent.parent / ".env"
+        env_path = _get_env_path()
         simulate = self.simulate_check.currentData()
 
         _user = self.smtp_user.text().strip()
@@ -2569,20 +2570,18 @@ class MainWindow(QMainWindow):
         scheduler_service.start(run_immediately=False)
 
         # Onboarding
-        config_path = os.path.join(os.path.expanduser("~"), ".nudge_config.json")
+        config_path = _get_nudge_config_path()
         already_seen = False
-        if os.path.exists(config_path):
+        if config_path.exists():
             try:
-                with open(config_path, "r") as f:
-                    already_seen = json.load(f).get("onboarding_done", False)
-            except:
+                already_seen = json.loads(config_path.read_text(encoding="utf-8")).get("onboarding_done", False)
+            except Exception:
                 pass
         if not already_seen:
             self.show_onboarding()
             try:
-                with open(config_path, "w") as f:
-                    json.dump({"onboarding_done": True}, f)
-            except:
+                config_path.write_text(json.dumps({"onboarding_done": True}), encoding="utf-8")
+            except Exception:
                 pass
 
         self._apply_permissions()
@@ -2767,39 +2766,32 @@ class MainWindow(QMainWindow):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def _start_api_server():
-    import threading
+    """Lance l'API en thread si elle n'est pas déjà active."""
     import urllib.request
-    import uvicorn
     from config.settings import API_HOST, API_PORT
-
-    # Ne pas démarrer si l'API est déjà active (ex : lancée par run_nudge.py)
     try:
         urllib.request.urlopen(f"http://{API_HOST}:{API_PORT}/health", timeout=1)
-        return
+        return  # déjà active
     except Exception:
         pass
-
-    def _run():
-        uvicorn.run("api.app:app", host=API_HOST, port=API_PORT, log_level="warning")
-
-    threading.Thread(target=_run, daemon=True).start()
+    from api_server import start_in_thread
+    start_in_thread(API_HOST, API_PORT)
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Point d'entrée principal — appelable depuis run_nudge.py ou directement."""
     _start_api_server()
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     session = None
 
     if auth_service.AUTH_ENABLED:
-        # Premier lancement : créer le compte admin si aucun compte n'existe
         if auth_service.needs_first_admin():
             setup = FirstAdminDialog()
             if setup.exec() != QDialog.DialogCode.Accepted:
                 sys.exit(0)
-
-        # Fenêtre de connexion
         login = LoginDialog()
         if login.exec() != QDialog.DialogCode.Accepted or not login.session:
             sys.exit(0)
@@ -2811,3 +2803,7 @@ if __name__ == "__main__":
     app._main_window = window
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

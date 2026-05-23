@@ -1,20 +1,32 @@
 """
-Serveur API Nudge (optionnel) — à lancer séparément de nudge.py.
+Serveur API Nudge — utilisable en script ou importé par run_nudge.py.
 
-Usage :
+Usage direct :
     cd "PyQt 6"
     python api_server.py
 
-L'API écoute sur http://127.0.0.1:8000 par défaut.
-Configurez NUDGE_API_HOST / NUDGE_API_PORT dans .env pour changer.
+Ou depuis run_nudge.py (mode import, sans subprocess) :
+    from api_server import start_in_thread
+    start_in_thread()
 """
 import sys
 import os
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uvicorn
 from config.settings import API_HOST, API_PORT
+
+
+def start_in_thread(host: str = API_HOST, port: int = API_PORT) -> None:
+    """Lance uvicorn dans un thread daemon — retourne immédiatement."""
+    def _run():
+        uvicorn.run("api.app:app", host=host, port=port, log_level="warning")
+
+    t = threading.Thread(target=_run, daemon=True, name="nudge-api")
+    t.start()
+
 
 if __name__ == "__main__":
     print(f"[NUDGE API] Démarrage sur http://{API_HOST}:{API_PORT}")
