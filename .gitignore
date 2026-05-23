@@ -28,3 +28,15 @@ dist/
 *.log
 __pycache__/
 .env
+
+build/
+dist/
+*.exe
+*.AppImage
+*.tar.gz
+*.zip
+*.spec.bak
+__pycache__/
+*.pyc
+.env
+*.db
