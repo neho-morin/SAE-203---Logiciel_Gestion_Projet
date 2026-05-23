@@ -6,14 +6,15 @@ load_dotenv()
 # Base de données
 DATABASE_PATH = os.path.join(os.path.expanduser("~"), "nudge.db")
 
-# SMTP
+# SMTP — priorité aux clés NUDGE_SMTP_*, fallback sur SMTP_* pour rétrocompatibilité
 SMTP_HOST     = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT     = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER     = os.getenv("SMTP_USER", "")
-SMTP_PASS     = os.getenv("SMTP_PASSWORD", "")
+SMTP_USER     = os.getenv("NUDGE_SMTP_USER") or os.getenv("SMTP_USER", "")
+SMTP_PASS     = os.getenv("NUDGE_SMTP_PASS") or os.getenv("SMTP_PASSWORD", "")
 
 # True = simulation (pas d'envoi réel), False = envoi SMTP réel
-MAIL_SIMULATE = os.getenv("MAIL_SIMULATE", "true").lower() == "true"
+# priorité à NUDGE_SIMULATE, fallback sur MAIL_SIMULATE
+MAIL_SIMULATE = (os.getenv("NUDGE_SIMULATE") or os.getenv("MAIL_SIMULATE", "true")).lower() == "true"
 
 # API locale Nudge (exposée à OpenClaw)
 API_TOKEN = os.getenv("NUDGE_API_TOKEN", "")

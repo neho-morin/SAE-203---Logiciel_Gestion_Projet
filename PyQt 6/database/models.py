@@ -37,4 +37,12 @@ CREATE TABLE IF NOT EXISTS relances (
     mode        TEXT NOT NULL DEFAULT 'Simulation',
     envoyee_le  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
+
+CREATE TABLE IF NOT EXISTS chat_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    role            TEXT    NOT NULL,
+    content         TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    conversation_id TEXT    NOT NULL DEFAULT 'default'
+);
 """

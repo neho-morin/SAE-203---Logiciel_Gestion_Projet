@@ -10,13 +10,14 @@ import services.task_service     as task_service
 import services.user_service     as user_service
 import services.relance_service  as relance_service
 import services.scheduler_service as scheduler_service
+import services.chat_history_service as chat_history_service
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QLineEdit, QComboBox, QDateEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QFrame, QScrollArea, QDialog,
     QDialogButtonBox, QFormLayout, QTextEdit, QMessageBox, QStackedWidget,
-    QGridLayout, QSizePolicy, QSpacerItem
+    QGridLayout, QSizePolicy, QSpacerItem, QSpinBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDate, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush
@@ -497,9 +498,22 @@ class ChatDialog(QDialog):
         title_lbl.setStyleSheet("color: white; font-size: 15px; font-weight: 800; border: none;")
         powered_lbl = QLabel("via OpenClaw")
         powered_lbl.setStyleSheet("color: rgba(255,255,255,0.55); font-size: 11px; border: none;")
+        clear_btn = QPushButton("Effacer")
+        clear_btn.setFixedHeight(30)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255,255,255,0.15); color: white;
+                border: 1px solid rgba(255,255,255,0.3); border-radius: 6px;
+                padding: 0px 10px; font-size: 11px; font-weight: 600;
+            }
+            QPushButton:hover { background: rgba(255,255,255,0.25); }
+        """)
+        clear_btn.clicked.connect(self._clear_history)
         hl.addWidget(title_lbl)
         hl.addStretch()
         hl.addWidget(powered_lbl)
+        hl.addSpacing(12)
+        hl.addWidget(clear_btn)
         lay.addWidget(header)
 
         # Zone de messages
@@ -545,13 +559,11 @@ class ChatDialog(QDialog):
         bl.addWidget(self.send_btn)
         lay.addWidget(bar)
 
-        self._add_bubble(
-            "Bonjour ! Je suis votre assistant Nudge.\n"
-            "Posez-moi une question sur vos tâches, projets ou priorités.",
-            is_user=False,
-        )
+        self._load_history()
 
-    def _add_bubble(self, text: str, is_user: bool) -> None:
+    def _add_bubble(self, text: str, is_user: bool, save: bool = False) -> None:
+        if save:
+            chat_history_service.add("user" if is_user else "assistant", text)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
 
@@ -600,7 +612,7 @@ class ChatDialog(QDialog):
         if not text or self._worker is not None:
             return
         self.input.clear()
-        self._add_bubble(text, is_user=True)
+        self._add_bubble(text, is_user=True, save=True)
         self._set_busy(True)
 
         self._worker = ChatWorker(text)
@@ -610,7 +622,7 @@ class ChatDialog(QDialog):
         self._worker.start()
 
     def _on_reply(self, reply: str) -> None:
-        self._add_bubble(reply, is_user=False)
+        self._add_bubble(reply, is_user=False, save=True)
 
     def _on_error(self, err: str) -> None:
         self._add_bubble(f"Erreur : {err}", is_user=False)
@@ -619,6 +631,59 @@ class ChatDialog(QDialog):
         self._worker = None
         self._set_busy(False)
         self.input.setFocus()
+
+    def _load_history(self) -> None:
+        history = chat_history_service.get_all()
+        if not history:
+            self._add_bubble(
+                "Bonjour ! Je suis votre assistant Nudge.\n"
+                "Posez-moi une question sur vos tâches, projets ou priorités.",
+                is_user=False,
+            )
+        else:
+            for msg in history:
+                self._add_bubble(msg["content"], is_user=(msg["role"] == "user"))
+
+    @staticmethod
+    def _clear_layout_recursive(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            w = item.widget()
+            child = item.layout()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+            elif child is not None:
+                ChatDialog._clear_layout_recursive(child)
+
+    def _clear_chat_view(self) -> None:
+        """Vide toutes les bulles du layout en gardant uniquement le stretch final."""
+        while self.msg_layout.count() > 1:
+            item = self.msg_layout.takeAt(0)
+            if item is None:
+                break
+            w = item.widget()
+            child = item.layout()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+            elif child is not None:
+                self._clear_layout_recursive(child)
+
+    def _clear_history(self) -> None:
+        reply = QMessageBox.question(
+            self, "Effacer l'historique",
+            "Voulez-vous effacer tout l'historique de conversation ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        chat_history_service.clear()
+        self._clear_chat_view()
+        self._add_bubble(
+            "Historique effacé. Posez-moi une nouvelle question.",
+            is_user=False,
+        )
 
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
@@ -1521,6 +1586,192 @@ class TaskArea(QWidget):
             self.window().refresh_all()
 
 
+# ── Dialog Configuration des relances ─────────────────────────────────────────
+class RelanceConfigDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configuration des relances")
+        self.setMinimumWidth(480)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        lay = QVBoxLayout(self)
+        lay.setSpacing(10)
+        lay.setContentsMargins(24, 20, 24, 20)
+
+        title = QLabel("Configuration des relances")
+        title.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {TEXT};")
+        lay.addWidget(title)
+
+        from services import relance_config_service
+        self._cfg = relance_config_service.load()
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItem("Tâches en retard", "late")
+        self.scope_combo.addItem("Échéance aujourd'hui", "today")
+        self.scope_combo.addItem("Dans N jours", "days")
+        self.scope_combo.addItem("Toutes les tâches actives", "all")
+        idx = self.scope_combo.findData(self._cfg.get("scope", "late"))
+        if idx >= 0:
+            self.scope_combo.setCurrentIndex(idx)
+        self.scope_combo.currentIndexChanged.connect(self._on_scope_changed)
+        form.addRow("Périmètre", self.scope_combo)
+
+        self.days_spin = QSpinBox()
+        self.days_spin.setRange(1, 30)
+        self.days_spin.setValue(self._cfg.get("days_ahead", 3))
+        self.days_spin.setSuffix(" jours")
+        form.addRow("Jours à venir", self.days_spin)
+
+        self.project_combo = QComboBox()
+        self.project_combo.addItem("Tous les projets", None)
+        for p in projects:
+            self.project_combo.addItem(p["nom"], p["id"])
+        pid = self._cfg.get("project_id")
+        if pid is not None:
+            pidx = self.project_combo.findData(pid)
+            if pidx >= 0:
+                self.project_combo.setCurrentIndex(pidx)
+        form.addRow("Projet", self.project_combo)
+
+        lay.addLayout(form)
+
+        lay.addWidget(SectionLabel("Statuts inclus (vide = tous)"))
+        statuts_frame = QFrame()
+        statuts_frame.setStyleSheet(f"background: {SURFACE2}; border-radius: 8px; border: 1px solid {BORDER};")
+        sl = QHBoxLayout(statuts_frame)
+        sl.setContentsMargins(12, 8, 12, 8)
+        sl.setSpacing(16)
+        self.statut_checks: dict[str, QCheckBox] = {}
+        for s in ["À faire", "En cours"]:
+            cb = QCheckBox(s)
+            cb.setChecked(s in (self._cfg.get("statuts") or []))
+            sl.addWidget(cb)
+            self.statut_checks[s] = cb
+        sl.addStretch()
+        lay.addWidget(statuts_frame)
+
+        lay.addWidget(SectionLabel("Priorités incluses (vide = toutes)"))
+        prio_frame = QFrame()
+        prio_frame.setStyleSheet(f"background: {SURFACE2}; border-radius: 8px; border: 1px solid {BORDER};")
+        pl = QHBoxLayout(prio_frame)
+        pl.setContentsMargins(12, 8, 12, 8)
+        pl.setSpacing(16)
+        self.prio_checks: dict[str, QCheckBox] = {}
+        for prio in ["Basse", "Moyenne", "Haute", "Critique"]:
+            cb = QCheckBox(prio)
+            cb.setChecked(prio in (self._cfg.get("priorites") or []))
+            pl.addWidget(cb)
+            self.prio_checks[prio] = cb
+        pl.addStretch()
+        lay.addWidget(prio_frame)
+
+        self._on_scope_changed()
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self._save_and_accept)
+        btns.rejected.connect(self.reject)
+        btns.button(QDialogButtonBox.StandardButton.Save).setText("Sauvegarder")
+        btns.button(QDialogButtonBox.StandardButton.Save).setStyleSheet(btn_style())
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setStyleSheet(btn_style(BORDER, TEXT))
+        lay.addWidget(btns)
+
+    def _on_scope_changed(self) -> None:
+        self.days_spin.setEnabled(self.scope_combo.currentData() == "days")
+
+    def get_config(self) -> dict:
+        return {
+            "scope":      self.scope_combo.currentData(),
+            "days_ahead": self.days_spin.value(),
+            "project_id": self.project_combo.currentData(),
+            "statuts":    [s for s, cb in self.statut_checks.items() if cb.isChecked()],
+            "priorites":  [p for p, cb in self.prio_checks.items() if cb.isChecked()],
+        }
+
+    def _save_and_accept(self) -> None:
+        from services import relance_config_service
+        relance_config_service.save(self.get_config())
+        self.accept()
+
+
+# ── Dialog Aperçu des relances ────────────────────────────────────────────────
+class RelancePreviewDialog(QDialog):
+    def __init__(self, tasks_to_relance: list, parent=None):
+        super().__init__(parent)
+        self.tasks_to_relance = tasks_to_relance
+        self.sim_mode = True
+        self.setWindowTitle("Aperçu des relances")
+        self.setMinimumSize(540, 420)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        lay = QVBoxLayout(self)
+        lay.setSpacing(10)
+        lay.setContentsMargins(24, 20, 24, 20)
+
+        title = QLabel(f"Relances à envoyer — {len(tasks_to_relance)} tâche(s)")
+        title.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {TEXT};")
+        lay.addWidget(title)
+
+        self.sim_btn = QPushButton("Mode : Simulation")
+        self.sim_btn.setStyleSheet(btn_style(INFO_L, INFO))
+        self.sim_btn.clicked.connect(self._toggle_sim)
+        lay.addWidget(self.sim_btn)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"QScrollArea {{ border: 1px solid {BORDER}; border-radius: 8px; }}")
+        container = QWidget()
+        container.setStyleSheet(f"background: {SURFACE};")
+        vl = QVBoxLayout(container)
+        vl.setContentsMargins(10, 8, 10, 8)
+        vl.setSpacing(6)
+
+        for t in tasks_to_relance:
+            row = QFrame()
+            row.setStyleSheet(f"background: {SURFACE2}; border-radius: 8px; border: 1px solid {BORDER};")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(10, 8, 10, 8)
+            rl.setSpacing(10)
+
+            name_lbl = QLabel(t["titre"])
+            name_lbl.setStyleSheet(f"font-weight: 700; font-size: 13px; border: none;")
+            name_lbl.setWordWrap(True)
+            rl.addWidget(name_lbl, stretch=1)
+
+            rl.addWidget(Badge(infer_statut(t)))
+
+            ech_lbl = QLabel(fmt_date(t.get("echeance", "")))
+            ech_lbl.setStyleSheet(f"color: {MUTED}; font-size: 11px; border: none;")
+            rl.addWidget(ech_lbl)
+
+            resp_lbl = QLabel(t.get("responsable") or "—")
+            resp_lbl.setStyleSheet(f"color: {TEXT}; font-size: 11px; border: none;")
+            rl.addWidget(resp_lbl)
+
+            vl.addWidget(row)
+
+        vl.addStretch()
+        scroll.setWidget(container)
+        lay.addWidget(scroll)
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Envoyer les relances")
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet(btn_style())
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setStyleSheet(btn_style(BORDER, TEXT))
+        lay.addWidget(btns)
+
+    def _toggle_sim(self) -> None:
+        self.sim_mode = not self.sim_mode
+        if self.sim_mode:
+            self.sim_btn.setText("Mode : Simulation")
+            self.sim_btn.setStyleSheet(btn_style(INFO_L, INFO))
+        else:
+            self.sim_btn.setText("Mode : Réel (SMTP)")
+            self.sim_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
+
+
 # ── Dialog Configuration SMTP ─────────────────────────────────────────────────
 class SmtpConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -1541,25 +1792,30 @@ class SmtpConfigDialog(QDialog):
         desc.setWordWrap(True)
         lay.addWidget(desc)
 
-        # Lire les valeurs actuelles du .env
-        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        # Lire les valeurs actuelles du .env (à la racine du projet)
+        from pathlib import Path as _Path
+        env_path = _Path(__file__).resolve().parent.parent / ".env"
         env_vals = {}
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if "=" in line and not line.startswith("#"):
-                        k, v = line.split("=", 1)
-                        env_vals[k.strip()] = v.strip()
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    env_vals[k.strip()] = v.strip()
 
         form = QFormLayout()
         form.setSpacing(10)
 
+        # Lecture avec priorité aux clés NUDGE_*, fallback sur les anciennes clés
+        _smtp_user = env_vals.get("NUDGE_SMTP_USER") or env_vals.get("SMTP_USER", "")
+        _smtp_pass = env_vals.get("NUDGE_SMTP_PASS") or env_vals.get("SMTP_PASSWORD", "")
+        _sim_str   = env_vals.get("NUDGE_SIMULATE") or env_vals.get("MAIL_SIMULATE", "true")
+
         self.smtp_host = QLineEdit(env_vals.get("SMTP_HOST", "smtp.gmail.com"))
         self.smtp_port = QLineEdit(env_vals.get("SMTP_PORT", "587"))
-        self.smtp_user = QLineEdit(env_vals.get("SMTP_USER", ""))
+        self.smtp_user = QLineEdit(_smtp_user)
         self.smtp_user.setPlaceholderText("votre.email@gmail.com")
-        self.smtp_pass = QLineEdit(env_vals.get("SMTP_PASSWORD", ""))
+        self.smtp_pass = QLineEdit(_smtp_pass)
         self.smtp_pass.setPlaceholderText("Mot de passe d application Gmail")
         self.smtp_pass.setEchoMode(QLineEdit.EchoMode.Password)
 
@@ -1581,7 +1837,7 @@ class SmtpConfigDialog(QDialog):
         pass_row.addWidget(show_pass)
 
         # Simulation toggle
-        simulate_val = env_vals.get("MAIL_SIMULATE", "true").lower() == "true"
+        simulate_val = _sim_str.lower() == "true"
         self.simulate_check = QComboBox()
         self.simulate_check.addItem("Simulation (aucun mail envoyé)", True)
         self.simulate_check.addItem("Réel (envoi SMTP)", False)
@@ -1614,28 +1870,52 @@ class SmtpConfigDialog(QDialog):
         lay.addWidget(btns)
 
     def save_and_accept(self):
-        env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        from pathlib import Path as _Path
+        env_path = _Path(__file__).resolve().parent.parent / ".env"
         simulate = self.simulate_check.currentData()
-        lines = [
-            "SMTP_HOST=" + self.smtp_host.text().strip(),
-            "SMTP_PORT=" + self.smtp_port.text().strip(),
-            "SMTP_USER=" + self.smtp_user.text().strip(),
-            "SMTP_PASSWORD=" + self.smtp_pass.text().strip(),
-            "MAIL_SIMULATE=" + str(simulate).lower(),
-        ]
-        content = "\n".join(lines) + "\n"
+
+        _user = self.smtp_user.text().strip()
+        _pass = self.smtp_pass.text().strip()
+        _sim  = str(simulate).lower()
+
+        # Écriture des deux formats pour garantir la compatibilité
+        updates = {
+            "SMTP_HOST":       self.smtp_host.text().strip(),
+            "SMTP_PORT":       self.smtp_port.text().strip(),
+            "SMTP_USER":       _user,
+            "SMTP_PASSWORD":   _pass,
+            "MAIL_SIMULATE":   _sim,
+            "NUDGE_SMTP_USER": _user,
+            "NUDGE_SMTP_PASS": _pass,
+            "NUDGE_SIMULATE":  _sim,
+        }
+
+        # Merge: mettre à jour les clés existantes, ajouter les nouvelles
+        out_lines: list[str] = []
+        found: set[str] = set()
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines(keepends=True):
+                stripped = line.strip()
+                if "=" in stripped and not stripped.startswith("#"):
+                    key = stripped.split("=", 1)[0].strip()
+                    if key in updates:
+                        out_lines.append(f"{key}={updates[key]}\n")
+                        found.add(key)
+                        continue
+                out_lines.append(line if line.endswith("\n") else line + "\n")
+        for key, val in updates.items():
+            if key not in found:
+                out_lines.append(f"{key}={val}\n")
+
         try:
-            with open(env_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            # Recharger les variables d environnement
+            env_path.write_text("".join(out_lines), encoding="utf-8")
             from dotenv import load_dotenv
-            load_dotenv(env_path, override=True)
-            # Mettre à jour les settings en mémoire
+            load_dotenv(str(env_path), override=True)
             import config.settings as settings
-            settings.SMTP_HOST     = self.smtp_host.text().strip()
-            settings.SMTP_PORT     = int(self.smtp_port.text().strip() or 587)
-            settings.SMTP_USER     = self.smtp_user.text().strip()
-            settings.SMTP_PASS     = self.smtp_pass.text().strip()
+            settings.SMTP_HOST     = updates["SMTP_HOST"]
+            settings.SMTP_PORT     = int(updates["SMTP_PORT"] or 587)
+            settings.SMTP_USER     = _user
+            settings.SMTP_PASS     = _pass
             settings.MAIL_SIMULATE = simulate
             import services.mail_service as ms
             ms.SMTP_HOST     = settings.SMTP_HOST
@@ -1693,6 +1973,10 @@ class MainWindow(QMainWindow):
         config_btn.setStyleSheet(btn_style(INFO_L, INFO))
         config_btn.clicked.connect(self.show_smtp_config)
 
+        relance_config_btn = QPushButton("Config. relances")
+        relance_config_btn.setStyleSheet(btn_style(WARNING_L, WARNING))
+        relance_config_btn.clicked.connect(self.show_relance_config)
+
         chat_btn = QPushButton("Assistant IA")
         chat_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
         chat_btn.clicked.connect(self.show_chat)
@@ -1705,6 +1989,7 @@ class MainWindow(QMainWindow):
         tb_lay.addStretch()
         tb_lay.addWidget(guide_btn)
         tb_lay.addWidget(config_btn)
+        tb_lay.addWidget(relance_config_btn)
         tb_lay.addWidget(chat_btn)
         tb_lay.addWidget(self.relance_btn)
 
@@ -1790,16 +2075,66 @@ class MainWindow(QMainWindow):
         dlg = ChatDialog(self)
         dlg.exec()
 
+    def show_relance_config(self):
+        dlg = RelanceConfigDialog(self)
+        dlg.exec()
+
     def show_smtp_config(self):
         dlg = SmtpConfigDialog(self)
         dlg.exec()
 
     def on_relance_global(self):
-        en_retard = [t for t in tasks if infer_statut(t) == "En retard"]
-        if not en_retard:
-            QMessageBox.information(self, "Relance", "Aucune tâche en retard pour l'instant.")
+        from services import relance_config_service
+        from services import mail_service as ms
+        config   = relance_config_service.load()
+        matching = relance_config_service.get_tasks_for_relance(config)
+
+        if not matching:
+            QMessageBox.information(
+                self, "Relance",
+                "Aucune tâche à relancer selon la configuration actuelle.\n"
+                "Modifiez la configuration via « Config. relances »."
+            )
             return
-        self.task_area.on_relance(en_retard[0])
+
+        dlg = RelancePreviewDialog(matching, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        sim  = dlg.sim_mode
+        mode = "Simulation" if sim else "Réel"
+        sent = errors = 0
+
+        for t in matching:
+            email = t.get("responsable_email", "")
+            if not email and t.get("responsable_id"):
+                resp  = user_service.get_by_id(t["responsable_id"])
+                email = resp["email"] if resp else ""
+            if not email:
+                errors += 1
+                continue
+
+            subject, body = ms.build_message(t, "depassement")
+            ok = ms.send(email, subject, body, simulate=sim)
+            if ok:
+                relance_service.log(
+                    tache_id    = t["id"],
+                    tache_titre = t["titre"],
+                    email       = email,
+                    mode        = mode,
+                    type_       = "global",
+                )
+                sent += 1
+            else:
+                errors += 1
+
+        _reload_all()
+        self.refresh_all()
+
+        msg = f"{sent} relance(s) envoyée(s)."
+        if errors:
+            msg += f"\n{errors} échec(s) (email manquant ou erreur SMTP)."
+        QMessageBox.information(self, "Relances terminées", msg)
 
     def refresh_all(self):
         self.sidebar.refresh()
