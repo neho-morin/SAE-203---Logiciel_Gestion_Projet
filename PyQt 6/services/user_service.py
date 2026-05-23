@@ -23,6 +23,16 @@ def create(nom: str, email: str, role: str = "Autre") -> dict:
     return get_by_id(cur.lastrowid)
 
 
+def update(user_id: int, nom: str, email: str, role: str) -> dict | None:
+    conn = get_connection()
+    conn.execute(
+        "UPDATE utilisateurs SET nom = ?, email = ?, role = ? WHERE id = ?",
+        (nom, email, role, user_id),
+    )
+    conn.commit()
+    return get_by_id(user_id)
+
+
 def delete(user_id: int) -> None:
     conn = get_connection()
     conn.execute("DELETE FROM utilisateurs WHERE id = ?", (user_id,))

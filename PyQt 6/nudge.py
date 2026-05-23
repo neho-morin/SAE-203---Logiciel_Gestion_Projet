@@ -301,23 +301,31 @@ class ProjectDialog(QDialog):
         }
 
 class ResponsableDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, responsable=None, parent=None):
         super().__init__(parent)
         self.setWindowFlags(_DIALOG_FLAGS)
-        self.setWindowTitle("Nouveau responsable")
+        is_edit = responsable is not None
+        self.setWindowTitle("Modifier le responsable" if is_edit else "Nouveau responsable")
         self.setMinimumWidth(360)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
         lay = QVBoxLayout(self)
 
-        title = QLabel("Nouveau responsable")
+        title = QLabel("Modifier le responsable" if is_edit else "Nouveau responsable")
         title.setStyleSheet(f"font-size: 15px; font-weight: 800;")
         lay.addWidget(title)
 
         form = QFormLayout()
-        self.name  = QLineEdit(); self.name.setPlaceholderText("Prénom Nom")
-        self.email = QLineEdit(); self.email.setPlaceholderText("email@example.com")
+        form.setSpacing(8)
+        self.name  = QLineEdit(responsable["nom"]   if is_edit else "")
+        self.name.setPlaceholderText("Prénom Nom")
+        self.email = QLineEdit(responsable["email"] if is_edit else "")
+        self.email.setPlaceholderText("email@example.com")
         self.role  = QComboBox()
         self.role.addItems(["Développeur", "Chef de projet", "Designer", "Testeur", "Autre"])
+        if is_edit:
+            idx = self.role.findText(responsable.get("role", "Autre"))
+            if idx >= 0:
+                self.role.setCurrentIndex(idx)
         form.addRow("Nom *", self.name)
         form.addRow("Email *", self.email)
         form.addRow("Rôle", self.role)
@@ -987,10 +995,12 @@ class OnboardingDialog(QDialog):
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 class Sidebar(QFrame):
-    project_selected = pyqtSignal(int)
-    add_project      = pyqtSignal()
-    add_responsable  = pyqtSignal()
-    go_home          = pyqtSignal()
+    project_selected    = pyqtSignal(int)
+    add_project         = pyqtSignal()
+    add_responsable     = pyqtSignal()
+    edit_responsable    = pyqtSignal(int)
+    delete_responsable  = pyqtSignal(int)
+    go_home             = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1025,10 +1035,9 @@ class Sidebar(QFrame):
         lay.addSpacing(14)
 
         lay.addWidget(SectionLabel("Responsables"))
-        self.resp_label = QLabel("Aucun responsable")
-        self.resp_label.setStyleSheet(f"color: {MUTED}; font-size: 11px; padding: 2px 4px;")
-        self.resp_label.setWordWrap(True)
-        lay.addWidget(self.resp_label)
+        self.resp_list_container = QVBoxLayout()
+        self.resp_list_container.setSpacing(1)
+        lay.addLayout(self.resp_list_container)
 
         self.add_resp = QPushButton("+ Ajouter un responsable")
         self.add_resp.setStyleSheet(f"""
@@ -1077,13 +1086,51 @@ class Sidebar(QFrame):
             btn.clicked.connect(lambda _, pid=p["id"]: self.project_selected.emit(pid))
             self.proj_container.addWidget(btn)
 
-        if responsables:
-            names = ", ".join(r["nom"] for r in responsables[:3])
-            if len(responsables) > 3:
-                names += f" +{len(responsables)-3}"
-            self.resp_label.setText(names)
+        while self.resp_list_container.count():
+            item = self.resp_list_container.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+
+        if not responsables:
+            empty = QLabel("Aucun responsable")
+            empty.setStyleSheet(f"color: {MUTED}; font-size: 11px; padding: 2px 4px;")
+            self.resp_list_container.addWidget(empty)
         else:
-            self.resp_label.setText("Aucun responsable")
+            for r in responsables:
+                row = QWidget()
+                row.setStyleSheet("background: transparent;")
+                rl = QHBoxLayout(row)
+                rl.setContentsMargins(0, 0, 0, 0)
+                rl.setSpacing(2)
+
+                name_btn = QPushButton(r["nom"])
+                name_btn.setToolTip(f"{r['email']}  •  {r.get('role','')}")
+                name_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: transparent; color: {TEXT};
+                        border: none; border-radius: 8px;
+                        padding: 5px 6px; text-align: left;
+                        font-size: 12px;
+                    }}
+                    QPushButton:hover {{ background: {ACCENT_L}; color: {ACCENT}; }}
+                """)
+                name_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                name_btn.clicked.connect(lambda _, rid=r["id"]: self.edit_responsable.emit(rid))
+
+                del_btn = QPushButton("✕")
+                del_btn.setFixedSize(22, 22)
+                del_btn.setToolTip("Supprimer")
+                del_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background: transparent; color: {MUTED};
+                        border: none; border-radius: 4px; font-size: 10px;
+                    }}
+                    QPushButton:hover {{ background: {DANGER_L}; color: {DANGER}; }}
+                """)
+                del_btn.clicked.connect(lambda _, rid=r["id"]: self.delete_responsable.emit(rid))
+
+                rl.addWidget(name_btn)
+                rl.addWidget(del_btn)
+                self.resp_list_container.addWidget(row)
 
         while self.history_container.count():
             item = self.history_container.takeAt(0)
@@ -2514,6 +2561,8 @@ class MainWindow(QMainWindow):
         self.sidebar.project_selected.connect(self.on_project_selected)
         self.sidebar.add_project.connect(self.on_add_project)
         self.sidebar.add_responsable.connect(self.on_add_responsable)
+        self.sidebar.edit_responsable.connect(self.on_edit_responsable)
+        self.sidebar.delete_responsable.connect(self.on_delete_responsable)
         self.sidebar.go_home.connect(self.on_go_home)
 
         # Démarrer le scheduler d'Antoine
@@ -2605,6 +2654,37 @@ class MainWindow(QMainWindow):
                 return
             new_resp = user_service.create(data["nom"], data["email"], data["role"])
             responsables.append(new_resp)
+            self.refresh_all()
+
+    def on_edit_responsable(self, resp_id: int):
+        resp = next((r for r in responsables if r["id"] == resp_id), None)
+        if not resp:
+            return
+        dlg = ResponsableDialog(responsable=resp, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            data = dlg.get_data()
+            if not data["nom"] or not data["email"]:
+                QMessageBox.warning(self, "Erreur", "Le nom et l'email sont obligatoires.")
+                return
+            updated = user_service.update(resp_id, data["nom"], data["email"], data["role"])
+            if updated:
+                resp.update(updated)
+            _reload_all()
+            self.refresh_all()
+
+    def on_delete_responsable(self, resp_id: int):
+        resp = next((r for r in responsables if r["id"] == resp_id), None)
+        if not resp:
+            return
+        reply = QMessageBox.question(
+            self, "Confirmer",
+            f"Supprimer le responsable « {resp['nom']} » ?\n"
+            "Les tâches qui lui sont attribuées seront désattribuées.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            user_service.delete(resp_id)
+            _reload_all()
             self.refresh_all()
 
     def show_chat(self):
