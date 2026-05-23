@@ -2586,7 +2586,7 @@ class MainWindow(QMainWindow):
                 pass
 
         self._apply_permissions()
-        self.task_area.show_home()
+        self.refresh_all()
 
     def _apply_permissions(self) -> None:
         s = self._session
@@ -2762,7 +2762,7 @@ class MainWindow(QMainWindow):
         self.dashboard.refresh()
         if self.task_area.active_project_id:
             self.task_area.refresh()
-        elif self.task_area.home_widget.isVisible():
+        else:
             self.task_area.show_home()
 
 # ── Entry point ───────────────────────────────────────────────────────────────
