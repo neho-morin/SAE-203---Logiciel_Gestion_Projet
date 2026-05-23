@@ -13,11 +13,27 @@ _DEFAULTS: dict = {
 }
 
 
+def _parse_days(value) -> int:
+    """Convertit days_ahead en int — rétrocompatibilité avec les anciennes valeurs texte."""
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, (float,)):
+        return max(0, int(value))
+    if isinstance(value, str):
+        import re
+        m = re.search(r'\d+', value)
+        return int(m.group()) if m else _DEFAULTS["days_ahead"]
+    return _DEFAULTS["days_ahead"]
+
+
 def load() -> dict:
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                return {**_DEFAULTS, **json.load(f)}
+                data = json.load(f)
+            if "days_ahead" in data:
+                data["days_ahead"] = _parse_days(data["days_ahead"])
+            return {**_DEFAULTS, **data}
         except Exception:
             pass
     return dict(_DEFAULTS)

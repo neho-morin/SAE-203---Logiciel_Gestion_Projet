@@ -53,6 +53,13 @@ PRIORITY_COLORS = {
     "Critique": "#c0392b",
 }
 
+# Flags pour les fenêtres secondaires — retire le bouton réduire (évite le blocage Linux)
+_DIALOG_FLAGS = (
+    Qt.WindowType.Dialog
+    | Qt.WindowType.WindowTitleHint
+    | Qt.WindowType.WindowCloseButtonHint
+)
+
 # ── Initialisation BDD + chargement des données ───────────────────────────────
 init_db()
 
@@ -228,6 +235,7 @@ class DonutWidget(QWidget):
 class ProjectDialog(QDialog):
     def __init__(self, project=None, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Nouveau projet" if not project else "Modifier le projet")
         self.setMinimumWidth(400)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
@@ -275,6 +283,7 @@ class ProjectDialog(QDialog):
 class ResponsableDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Nouveau responsable")
         self.setMinimumWidth(360)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
@@ -311,6 +320,7 @@ class ResponsableDialog(QDialog):
 class TaskDialog(QDialog):
     def __init__(self, project_id, task=None, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Nouvelle tâche" if not task else "Modifier la tâche")
         self.setMinimumWidth(420)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
@@ -394,6 +404,7 @@ class TaskDialog(QDialog):
 class RelanceDialog(QDialog):
     def __init__(self, task, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.task = task
         self.setWindowTitle("Relance par mail")
         self.setMinimumWidth(460)
@@ -479,6 +490,7 @@ class ChatWorker(QThread):
 class ChatDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Assistant IA — Nudge")
         self.setMinimumSize(520, 620)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
@@ -690,6 +702,7 @@ class ChatDialog(QDialog):
 class OnboardingDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Bienvenue sur Nudge")
         self.setMinimumSize(500, 420)
         self.setStyleSheet(f"""
@@ -1010,6 +1023,7 @@ class DashboardPanel(QFrame):
 class TaskDetailDialog(QDialog):
     def __init__(self, task, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.task = task
         self.setWindowTitle(f"Détail — {task['titre']}")
         self.setMinimumSize(500, 480)
@@ -1590,6 +1604,7 @@ class TaskArea(QWidget):
 class RelanceConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Configuration des relances")
         self.setMinimumWidth(480)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
@@ -1619,10 +1634,20 @@ class RelanceConfigDialog(QDialog):
         form.addRow("Périmètre", self.scope_combo)
 
         self.days_spin = QSpinBox()
-        self.days_spin.setRange(1, 30)
+        self.days_spin.setRange(0, 365)
         self.days_spin.setValue(self._cfg.get("days_ahead", 3))
-        self.days_spin.setSuffix(" jours")
-        form.addRow("Jours à venir", self.days_spin)
+
+        days_row = QWidget()
+        days_row.setStyleSheet("background: transparent;")
+        days_lay = QHBoxLayout(days_row)
+        days_lay.setContentsMargins(0, 0, 0, 0)
+        days_lay.setSpacing(8)
+        days_lay.addWidget(self.days_spin)
+        days_unit = QLabel("jour(s)")
+        days_unit.setStyleSheet(f"color: {MUTED}; font-size: 13px;")
+        days_lay.addWidget(days_unit)
+        days_lay.addStretch()
+        form.addRow("Jours à venir", days_row)
 
         self.project_combo = QComboBox()
         self.project_combo.addItem("Tous les projets", None)
@@ -1699,6 +1724,7 @@ class RelanceConfigDialog(QDialog):
 class RelancePreviewDialog(QDialog):
     def __init__(self, tasks_to_relance: list, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.tasks_to_relance = tasks_to_relance
         self.sim_mode = True
         self.setWindowTitle("Aperçu des relances")
@@ -1776,6 +1802,7 @@ class RelancePreviewDialog(QDialog):
 class SmtpConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
         self.setWindowTitle("Configuration mail")
         self.setMinimumWidth(440)
         self.setStyleSheet(GLOBAL_STYLE + input_style())
