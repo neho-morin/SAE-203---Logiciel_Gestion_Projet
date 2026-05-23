@@ -21,3 +21,10 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+build/
+dist/
+*.spec.bak
+*.log
+__pycache__/
+.env
