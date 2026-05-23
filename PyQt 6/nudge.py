@@ -11,6 +11,12 @@ import services.user_service     as user_service
 import services.relance_service  as relance_service
 import services.scheduler_service as scheduler_service
 import services.chat_history_service as chat_history_service
+import services.auth_service as auth_service
+from config.permissions import (
+    CREATE_PROJECT, CREATE_TASK, SEND_REMINDERS,
+    CONFIGURE_SMTP, CONFIGURE_REMINDERS, USE_AI_ASSISTANT,
+    CLEAR_AI_HISTORY, MANAGE_USERS, DELETE_TASK, EDIT_ALL_TASKS,
+)
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -59,6 +65,20 @@ _DIALOG_FLAGS = (
     | Qt.WindowType.WindowTitleHint
     | Qt.WindowType.WindowCloseButtonHint
 )
+
+_ROLE_LABELS = {
+    "admin":       "Administrateur",
+    "chef_projet": "Chef de projet",
+    "utilisateur": "Utilisateur",
+    "lecteur":     "Lecteur",
+}
+# (text_color, bg_color)
+_ROLE_COLORS = {
+    "admin":       (DANGER,  DANGER_L),
+    "chef_projet": (INFO,    INFO_L),
+    "utilisateur": (ACCENT,  ACCENT_L),
+    "lecteur":     (MUTED,   SURFACE2),
+}
 
 # ── Initialisation BDD + chargement des données ───────────────────────────────
 init_db()
@@ -467,6 +487,143 @@ class RelanceDialog(QDialog):
             "simulation": self.sim_mode,
         }
 
+# ── Premier lancement : créer le compte admin ─────────────────────────────────
+class FirstAdminDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
+        self.setWindowTitle("Nudge — Premier lancement")
+        self.setMinimumWidth(400)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        lay = QVBoxLayout(self)
+        lay.setSpacing(14)
+        lay.setContentsMargins(28, 24, 28, 24)
+
+        title = QLabel("Bienvenue dans Nudge !")
+        title.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {TEXT};")
+        lay.addWidget(title)
+
+        desc = QLabel("Aucun compte n'existe encore. Créez votre compte administrateur pour commencer.")
+        desc.setStyleSheet(f"color: {MUTED}; font-size: 13px;")
+        desc.setWordWrap(True)
+        lay.addWidget(desc)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+        self.username = QLineEdit()
+        self.username.setPlaceholderText("Nom d'utilisateur")
+        self.password = QLineEdit()
+        self.password.setPlaceholderText("Mot de passe")
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.confirm = QLineEdit()
+        self.confirm.setPlaceholderText("Confirmer le mot de passe")
+        self.confirm.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Identifiant *", self.username)
+        form.addRow("Mot de passe *", self.password)
+        form.addRow("Confirmation *", self.confirm)
+        lay.addLayout(form)
+
+        self.error_lbl = QLabel("")
+        self.error_lbl.setStyleSheet(f"color: {DANGER}; font-size: 12px;")
+        self.error_lbl.hide()
+        lay.addWidget(self.error_lbl)
+
+        create_btn = QPushButton("Créer le compte admin")
+        create_btn.setStyleSheet(btn_style())
+        create_btn.clicked.connect(self._on_create)
+        lay.addWidget(create_btn)
+
+    def _on_create(self):
+        user = self.username.text().strip()
+        pwd  = self.password.text()
+        conf = self.confirm.text()
+        if not user:
+            self._show_error("L'identifiant est obligatoire.")
+            return
+        if len(pwd) < 6:
+            self._show_error("Le mot de passe doit contenir au moins 6 caractères.")
+            return
+        if pwd != conf:
+            self._show_error("Les mots de passe ne correspondent pas.")
+            return
+        ok = auth_service.create_first_admin(user, pwd)
+        if ok:
+            self.accept()
+        else:
+            self._show_error("Un compte existe déjà.")
+
+    def _show_error(self, msg: str):
+        self.error_lbl.setText(msg)
+        self.error_lbl.show()
+
+
+# ── Connexion ─────────────────────────────────────────────────────────────────
+class LoginDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
+        self.setWindowTitle("Nudge — Connexion")
+        self.setMinimumWidth(380)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        self.session = None
+        lay = QVBoxLayout(self)
+        lay.setSpacing(14)
+        lay.setContentsMargins(28, 28, 28, 28)
+
+        # En-tête
+        header_frame = QFrame()
+        header_frame.setStyleSheet(f"background: {ACCENT}; border-radius: 12px;")
+        header_lay = QVBoxLayout(header_frame)
+        header_lay.setContentsMargins(20, 16, 20, 16)
+        title = QLabel("Nudge")
+        title.setStyleSheet("color: white; font-size: 22px; font-weight: 800; border: none;")
+        sub = QLabel("Suivi de projet et relances automatiques")
+        sub.setStyleSheet("color: rgba(255,255,255,0.75); font-size: 12px; border: none;")
+        header_lay.addWidget(title)
+        header_lay.addWidget(sub)
+        lay.addWidget(header_frame)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+        self.username = QLineEdit()
+        self.username.setPlaceholderText("Identifiant")
+        self.password = QLineEdit()
+        self.password.setPlaceholderText("Mot de passe")
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.returnPressed.connect(self._on_login)
+        form.addRow("Identifiant", self.username)
+        form.addRow("Mot de passe", self.password)
+        lay.addLayout(form)
+
+        self.error_lbl = QLabel("")
+        self.error_lbl.setStyleSheet(f"color: {DANGER}; font-size: 12px;")
+        self.error_lbl.hide()
+        lay.addWidget(self.error_lbl)
+
+        login_btn = QPushButton("Se connecter")
+        login_btn.setStyleSheet(btn_style())
+        login_btn.clicked.connect(self._on_login)
+        lay.addWidget(login_btn)
+
+    def _on_login(self):
+        user = self.username.text().strip()
+        pwd  = self.password.text()
+        if not user or not pwd:
+            self._show_error("Identifiant et mot de passe requis.")
+            return
+        session = auth_service.login_with_db(user, pwd)
+        if session is None:
+            self._show_error("Identifiant ou mot de passe incorrect.")
+            self.password.clear()
+            return
+        self.session = session
+        self.accept()
+
+    def _show_error(self, msg: str):
+        self.error_lbl.setText(msg)
+        self.error_lbl.show()
+
+
 # ── Chat IA ───────────────────────────────────────────────────────────────────
 class ChatWorker(QThread):
     response_ready = pyqtSignal(str)
@@ -510,9 +667,9 @@ class ChatDialog(QDialog):
         title_lbl.setStyleSheet("color: white; font-size: 15px; font-weight: 800; border: none;")
         powered_lbl = QLabel("via OpenClaw")
         powered_lbl.setStyleSheet("color: rgba(255,255,255,0.55); font-size: 11px; border: none;")
-        clear_btn = QPushButton("Effacer")
-        clear_btn.setFixedHeight(30)
-        clear_btn.setStyleSheet("""
+        self.clear_btn = QPushButton("Effacer")
+        self.clear_btn.setFixedHeight(30)
+        self.clear_btn.setStyleSheet("""
             QPushButton {
                 background: rgba(255,255,255,0.15); color: white;
                 border: 1px solid rgba(255,255,255,0.3); border-radius: 6px;
@@ -520,12 +677,12 @@ class ChatDialog(QDialog):
             }
             QPushButton:hover { background: rgba(255,255,255,0.25); }
         """)
-        clear_btn.clicked.connect(self._clear_history)
+        self.clear_btn.clicked.connect(self._clear_history)
         hl.addWidget(title_lbl)
         hl.addStretch()
         hl.addWidget(powered_lbl)
         hl.addSpacing(12)
-        hl.addWidget(clear_btn)
+        hl.addWidget(self.clear_btn)
         lay.addWidget(header)
 
         # Zone de messages
@@ -697,6 +854,10 @@ class ChatDialog(QDialog):
             is_user=False,
         )
 
+    def apply_permissions(self, session) -> None:
+        can_clear = session.can(CLEAR_AI_HISTORY) if session else False
+        self.clear_btn.setVisible(can_clear)
+
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 class OnboardingDialog(QDialog):
@@ -853,14 +1014,14 @@ class Sidebar(QFrame):
         self.proj_container.setSpacing(1)
         lay.addLayout(self.proj_container)
 
-        add_proj = QPushButton("+ Ajouter un projet")
-        add_proj.setStyleSheet(f"""
+        self.add_proj = QPushButton("+ Ajouter un projet")
+        self.add_proj.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {MUTED}; border: 1.5px dashed {BORDER};
                 border-radius: 8px; padding: 5px 8px; font-size: 11px; text-align: left; }}
             QPushButton:hover {{ color: {ACCENT}; border-color: {ACCENT}; }}
         """)
-        add_proj.clicked.connect(self.add_project.emit)
-        lay.addWidget(add_proj)
+        self.add_proj.clicked.connect(self.add_project.emit)
+        lay.addWidget(self.add_proj)
         lay.addSpacing(14)
 
         lay.addWidget(SectionLabel("Responsables"))
@@ -869,14 +1030,14 @@ class Sidebar(QFrame):
         self.resp_label.setWordWrap(True)
         lay.addWidget(self.resp_label)
 
-        add_resp = QPushButton("+ Ajouter un responsable")
-        add_resp.setStyleSheet(f"""
+        self.add_resp = QPushButton("+ Ajouter un responsable")
+        self.add_resp.setStyleSheet(f"""
             QPushButton {{ background: transparent; color: {MUTED}; border: 1.5px dashed {BORDER};
                 border-radius: 8px; padding: 5px 8px; font-size: 11px; text-align: left; }}
             QPushButton:hover {{ color: {ACCENT}; border-color: {ACCENT}; }}
         """)
-        add_resp.clicked.connect(self.add_responsable.emit)
-        lay.addWidget(add_resp)
+        self.add_resp.clicked.connect(self.add_responsable.emit)
+        lay.addWidget(self.add_resp)
         lay.addSpacing(14)
 
         lay.addWidget(SectionLabel("Dernières relances"))
@@ -885,6 +1046,12 @@ class Sidebar(QFrame):
         lay.addLayout(self.history_container)
 
         lay.addStretch()
+
+    def apply_permissions(self, session) -> None:
+        can_proj = session.can(CREATE_PROJECT) if session else False
+        can_resp = session.can(MANAGE_USERS)   if session else False
+        self.add_proj.setVisible(can_proj)
+        self.add_resp.setVisible(can_resp)
 
     def refresh(self, active_id=None):
         if active_id is not None:
@@ -1955,10 +2122,289 @@ class SmtpConfigDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "Erreur", f"Impossible de sauvegarder : {e}")
 
+# ── Gestion des utilisateurs ──────────────────────────────────────────────────
+class UserManagementDialog(QDialog):
+    def __init__(self, current_session, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
+        self._current_session = current_session
+        self.setWindowTitle("Gestion des comptes utilisateurs")
+        self.setMinimumSize(680, 500)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+
+        lay = QVBoxLayout(self)
+        lay.setSpacing(12)
+        lay.setContentsMargins(24, 20, 24, 20)
+
+        header_row = QHBoxLayout()
+        title = QLabel("Comptes utilisateurs")
+        title.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {TEXT};")
+        new_btn = QPushButton("+ Nouveau compte")
+        new_btn.setStyleSheet(btn_style())
+        new_btn.clicked.connect(self._on_new_user)
+        header_row.addWidget(title)
+        header_row.addStretch()
+        header_row.addWidget(new_btn)
+        lay.addLayout(header_row)
+
+        self.table = QTableWidget()
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["Identifiant", "Rôle", "Statut", "Créé le", "Actions"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(1, 140)
+        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(3, 130)
+        self.table.setColumnWidth(4, 200)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                background: {SURFACE}; border: 1.5px solid {BORDER};
+                border-radius: 12px; gridline-color: transparent;
+            }}
+            QHeaderView::section {{
+                background: {SURFACE2}; color: {MUTED};
+                font-size: 10px; font-weight: 700;
+                padding: 8px 13px; border: none; border-bottom: 1.5px solid {BORDER};
+            }}
+            QTableWidget::item {{ padding: 8px 13px; }}
+            QTableWidget::item:alternate {{ background: {SURFACE2}; }}
+            QTableWidget::item:selected {{ background: {ACCENT_L}; color: {TEXT}; }}
+        """)
+        lay.addWidget(self.table)
+
+        close_btn = QPushButton("Fermer")
+        close_btn.setStyleSheet(btn_style(BORDER, TEXT))
+        close_btn.clicked.connect(self.accept)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        lay.addLayout(btn_row)
+
+        self._refresh()
+
+    def _refresh(self):
+        from config.permissions import ALL_ROLES
+        users = auth_service.get_all_users()
+        self.table.setRowCount(len(users))
+
+        for row, u in enumerate(users):
+            is_self = (u["id"] == self._current_session.user_id)
+
+            # Identifiant
+            name_item = QTableWidgetItem(u["username"])
+            if is_self:
+                name_item.setText(u["username"] + "  (vous)")
+                name_item.setForeground(QColor(MUTED))
+            self.table.setItem(row, 0, name_item)
+
+            # Rôle (combo)
+            role_combo = QComboBox()
+            from config.permissions import ALL_ROLES
+            for r in ALL_ROLES:
+                role_combo.addItem(_ROLE_LABELS.get(r, r), r)
+            idx = role_combo.findData(u["role"])
+            if idx >= 0:
+                role_combo.setCurrentIndex(idx)
+            role_combo.setEnabled(not is_self)
+            role_combo.currentIndexChanged.connect(
+                lambda _, uid=u["id"], cb=role_combo: self._on_role_change(uid, cb)
+            )
+            role_w = QWidget()
+            role_lay = QHBoxLayout(role_w)
+            role_lay.setContentsMargins(4, 2, 4, 2)
+            role_lay.addWidget(role_combo)
+            self.table.setCellWidget(row, 1, role_w)
+
+            # Statut
+            active = bool(u["is_active"])
+            status_lbl = QLabel("Actif" if active else "Désactivé")
+            fg = ACCENT if active else DANGER
+            bg = ACCENT_L if active else DANGER_L
+            status_lbl.setStyleSheet(f"""
+                QLabel {{ background: {bg}; color: {fg};
+                    border-radius: 8px; padding: 2px 8px;
+                    font-size: 11px; font-weight: 700; }}
+            """)
+            status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            status_w = QWidget()
+            status_lay = QHBoxLayout(status_w)
+            status_lay.setContentsMargins(4, 2, 4, 2)
+            status_lay.addWidget(status_lbl)
+            self.table.setCellWidget(row, 2, status_w)
+
+            # Date création
+            created = u.get("created_at", "")[:10]
+            self.table.setItem(row, 3, QTableWidgetItem(fmt_date(created)))
+
+            # Actions
+            act_w = QWidget()
+            act_lay = QHBoxLayout(act_w)
+            act_lay.setContentsMargins(4, 2, 4, 2)
+            act_lay.setSpacing(4)
+
+            toggle_btn = QPushButton("Désactiver" if active else "Activer")
+            toggle_btn.setFixedHeight(26)
+            if active:
+                toggle_btn.setStyleSheet(f"""
+                    QPushButton {{ background: {WARNING_L}; color: {WARNING};
+                        border: 1.5px solid {WARNING}; border-radius: 6px;
+                        padding: 0 8px; font-size: 11px; font-weight: 600; }}
+                    QPushButton:hover {{ background: {WARNING}; color: white; }}
+                """)
+            else:
+                toggle_btn.setStyleSheet(f"""
+                    QPushButton {{ background: {ACCENT_L}; color: {ACCENT};
+                        border: 1.5px solid {ACCENT}; border-radius: 6px;
+                        padding: 0 8px; font-size: 11px; font-weight: 600; }}
+                    QPushButton:hover {{ background: {ACCENT}; color: white; }}
+                """)
+            toggle_btn.setEnabled(not is_self)
+            toggle_btn.clicked.connect(
+                lambda _, uid=u["id"], a=active: self._on_toggle(uid, a)
+            )
+
+            del_btn = QPushButton("Supprimer")
+            del_btn.setFixedHeight(26)
+            del_btn.setStyleSheet(f"""
+                QPushButton {{ background: {DANGER_L}; color: {DANGER};
+                    border: 1.5px solid {DANGER}; border-radius: 6px;
+                    padding: 0 8px; font-size: 11px; font-weight: 600; }}
+                QPushButton:hover {{ background: {DANGER}; color: white; }}
+            """)
+            del_btn.setEnabled(not is_self)
+            del_btn.clicked.connect(
+                lambda _, uid=u["id"], name=u["username"]: self._on_delete(uid, name)
+            )
+
+            act_lay.addWidget(toggle_btn)
+            act_lay.addWidget(del_btn)
+            act_lay.addStretch()
+            self.table.setCellWidget(row, 4, act_w)
+            self.table.setRowHeight(row, 46)
+
+    def _on_role_change(self, user_id: int, combo: QComboBox):
+        new_role = combo.currentData()
+        auth_service.update_user_role(user_id, new_role)
+
+    def _on_toggle(self, user_id: int, currently_active: bool):
+        auth_service.set_user_active(user_id, not currently_active)
+        self._refresh()
+
+    def _on_delete(self, user_id: int, username: str):
+        reply = QMessageBox.question(
+            self, "Confirmer la suppression",
+            f"Supprimer définitivement le compte « {username} » ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            auth_service.delete_user(user_id)
+            self._refresh()
+
+    def _on_new_user(self):
+        dlg = _NewUserDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            ok, err = auth_service.create_user(dlg.username, dlg.password, dlg.role)
+            if ok:
+                self._refresh()
+            else:
+                QMessageBox.warning(self, "Erreur", err)
+
+
+class _NewUserDialog(QDialog):
+    """Formulaire de création d'un nouveau compte."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(_DIALOG_FLAGS)
+        self.setWindowTitle("Nouveau compte")
+        self.setMinimumWidth(380)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        self.username = ""
+        self.password = ""
+        self.role = "utilisateur"
+
+        lay = QVBoxLayout(self)
+        lay.setSpacing(12)
+        lay.setContentsMargins(24, 20, 24, 20)
+
+        title = QLabel("Créer un compte")
+        title.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {TEXT};")
+        lay.addWidget(title)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        self._username = QLineEdit()
+        self._username.setPlaceholderText("Identifiant de connexion")
+
+        self._password = QLineEdit()
+        self._password.setPlaceholderText("Mot de passe (min. 6 caractères)")
+        self._password.setEchoMode(QLineEdit.EchoMode.Password)
+
+        self._confirm = QLineEdit()
+        self._confirm.setPlaceholderText("Confirmer le mot de passe")
+        self._confirm.setEchoMode(QLineEdit.EchoMode.Password)
+
+        from config.permissions import ALL_ROLES
+        self._role = QComboBox()
+        for r in ALL_ROLES:
+            self._role.addItem(_ROLE_LABELS.get(r, r), r)
+        self._role.setCurrentIndex(2)  # utilisateur par défaut
+
+        form.addRow("Identifiant *", self._username)
+        form.addRow("Mot de passe *", self._password)
+        form.addRow("Confirmation *", self._confirm)
+        form.addRow("Rôle", self._role)
+        lay.addLayout(form)
+
+        self._error = QLabel("")
+        self._error.setStyleSheet(f"color: {DANGER}; font-size: 12px;")
+        self._error.hide()
+        lay.addWidget(self._error)
+
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self._on_accept)
+        btns.rejected.connect(self.reject)
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("Créer")
+        btns.button(QDialogButtonBox.StandardButton.Ok).setStyleSheet(btn_style())
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setStyleSheet(btn_style(BORDER, TEXT))
+        lay.addWidget(btns)
+
+    def _on_accept(self):
+        u = self._username.text().strip()
+        p = self._password.text()
+        c = self._confirm.text()
+        if not u:
+            self._show_error("L'identifiant est obligatoire.")
+            return
+        if len(p) < 6:
+            self._show_error("Le mot de passe doit contenir au moins 6 caractères.")
+            return
+        if p != c:
+            self._show_error("Les mots de passe ne correspondent pas.")
+            return
+        self.username = u
+        self.password = p
+        self.role = self._role.currentData()
+        self.accept()
+
+    def _show_error(self, msg: str):
+        self._error.setText(msg)
+        self._error.show()
+
+
 # ── Main Window ───────────────────────────────────────────────────────────────
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, session=None):
         super().__init__()
+        self._session = session or auth_service.current_session()
         self.setWindowTitle("Nudge — Suivi de projet")
         self.setMinimumSize(1100, 680)
         self.setStyleSheet(GLOBAL_STYLE)
@@ -1996,29 +2442,62 @@ class MainWindow(QMainWindow):
         guide_btn.setStyleSheet(btn_style(BORDER, TEXT))
         guide_btn.clicked.connect(self.show_onboarding)
 
-        config_btn = QPushButton("Config. mail")
-        config_btn.setStyleSheet(btn_style(INFO_L, INFO))
-        config_btn.clicked.connect(self.show_smtp_config)
+        self.config_btn = QPushButton("Config. mail")
+        self.config_btn.setStyleSheet(btn_style(INFO_L, INFO))
+        self.config_btn.clicked.connect(self.show_smtp_config)
 
-        relance_config_btn = QPushButton("Config. relances")
-        relance_config_btn.setStyleSheet(btn_style(WARNING_L, WARNING))
-        relance_config_btn.clicked.connect(self.show_relance_config)
+        self.relance_config_btn = QPushButton("Config. relances")
+        self.relance_config_btn.setStyleSheet(btn_style(WARNING_L, WARNING))
+        self.relance_config_btn.clicked.connect(self.show_relance_config)
 
-        chat_btn = QPushButton("Assistant IA")
-        chat_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
-        chat_btn.clicked.connect(self.show_chat)
+        self.chat_btn = QPushButton("Assistant IA")
+        self.chat_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
+        self.chat_btn.clicked.connect(self.show_chat)
 
         self.relance_btn = QPushButton("Relancer par mail")
         self.relance_btn.setStyleSheet(btn_style())
         self.relance_btn.clicked.connect(self.on_relance_global)
 
+        self.users_btn = QPushButton("Comptes")
+        self.users_btn.setStyleSheet(btn_style(SURFACE2, TEXT, BORDER))
+        self.users_btn.clicked.connect(self.show_user_management)
+
+        # ── Badge de rôle + bouton Déconnexion ───────────────────────────────
+        role = self._session.role if self._session else "lecteur"
+        role_label = _ROLE_LABELS.get(role, role)
+        role_fg, role_bg = _ROLE_COLORS.get(role, (MUTED, SURFACE2))
+
+        self.role_badge = QLabel(f"  {role_label}  ")
+        self.role_badge.setStyleSheet(f"""
+            QLabel {{
+                background: {role_bg}; color: {role_fg};
+                border-radius: 10px; padding: 3px 8px;
+                font-size: 11px; font-weight: 700;
+            }}
+        """)
+        self.role_badge.setToolTip(f"Connecté en tant que : {self._session.username if self._session else '—'}")
+
+        username_lbl = QLabel(self._session.username if self._session else "")
+        username_lbl.setStyleSheet(f"color: {MUTED}; font-size: 12px;")
+
+        self.logout_btn = QPushButton("Déconnexion")
+        self.logout_btn.setStyleSheet(btn_style(BORDER, TEXT))
+        self.logout_btn.clicked.connect(self._on_logout)
+        # Masqué si auth non activée (stub passif)
+        self.logout_btn.setVisible(auth_service.AUTH_ENABLED)
+
         tb_lay.addWidget(self.global_search)
         tb_lay.addStretch()
         tb_lay.addWidget(guide_btn)
-        tb_lay.addWidget(config_btn)
-        tb_lay.addWidget(relance_config_btn)
-        tb_lay.addWidget(chat_btn)
+        tb_lay.addWidget(self.config_btn)
+        tb_lay.addWidget(self.relance_config_btn)
+        tb_lay.addWidget(self.chat_btn)
         tb_lay.addWidget(self.relance_btn)
+        tb_lay.addWidget(self.users_btn)
+        tb_lay.addSpacing(10)
+        tb_lay.addWidget(username_lbl)
+        tb_lay.addWidget(self.role_badge)
+        tb_lay.addWidget(self.logout_btn)
 
         content_lay.addWidget(topbar)
 
@@ -2057,7 +2536,37 @@ class MainWindow(QMainWindow):
             except:
                 pass
 
+        self._apply_permissions()
         self.task_area.show_home()
+
+    def _apply_permissions(self) -> None:
+        s = self._session
+        self.sidebar.apply_permissions(s)
+        self.task_area.add_task_btn.setVisible(s.can(CREATE_TASK) if s else False)
+        self.relance_btn.setVisible(s.can(SEND_REMINDERS) if s else False)
+        self.config_btn.setVisible(s.can(CONFIGURE_SMTP) if s else False)
+        self.relance_config_btn.setVisible(s.can(CONFIGURE_REMINDERS) if s else False)
+        self.chat_btn.setVisible(s.can(USE_AI_ASSISTANT) if s else False)
+        self.users_btn.setVisible(s.can(MANAGE_USERS) if s else False)
+
+    def _on_logout(self) -> None:
+        reply = QMessageBox.question(
+            self, "Déconnexion",
+            "Voulez-vous vous déconnecter ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        auth_service.logout()
+        scheduler_service.stop()
+        self.close()
+        dlg = LoginDialog()
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.session:
+            new_win = MainWindow(session=dlg.session)
+            new_win.show()
+            QApplication.instance()._main_window = new_win
+        else:
+            QApplication.instance().quit()
 
     def closeEvent(self, event):
         scheduler_service.stop()
@@ -2100,6 +2609,11 @@ class MainWindow(QMainWindow):
 
     def show_chat(self):
         dlg = ChatDialog(self)
+        dlg.apply_permissions(self._session)
+        dlg.exec()
+
+    def show_user_management(self):
+        dlg = UserManagementDialog(self._session, parent=self)
         dlg.exec()
 
     def show_relance_config(self):
@@ -2195,6 +2709,25 @@ if __name__ == "__main__":
     _start_api_server()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    window = MainWindow()
+
+    session = None
+
+    if auth_service.AUTH_ENABLED:
+        # Premier lancement : créer le compte admin si aucun compte n'existe
+        if auth_service.needs_first_admin():
+            setup = FirstAdminDialog()
+            if setup.exec() != QDialog.DialogCode.Accepted:
+                sys.exit(0)
+
+        # Fenêtre de connexion
+        login = LoginDialog()
+        if login.exec() != QDialog.DialogCode.Accepted or not login.session:
+            sys.exit(0)
+        session = login.session
+    else:
+        session = auth_service.current_session()
+
+    window = MainWindow(session=session)
+    app._main_window = window
     window.show()
     sys.exit(app.exec())

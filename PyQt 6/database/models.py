@@ -45,4 +45,13 @@ CREATE TABLE IF NOT EXISTS chat_history (
     created_at      TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
     conversation_id TEXT    NOT NULL DEFAULT 'default'
 );
+
+CREATE TABLE IF NOT EXISTS auth_users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT    NOT NULL UNIQUE,
+    password_hash TEXT    NOT NULL,
+    role          TEXT    NOT NULL DEFAULT 'utilisateur',
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now', 'localtime')),
+    is_active     INTEGER NOT NULL DEFAULT 1
+);
 """
