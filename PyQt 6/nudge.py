@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox, QFormLayout, QTextEdit, QMessageBox, QStackedWidget,
     QGridLayout, QSizePolicy, QSpacerItem
 )
-from PyQt6.QtCore import Qt, QDate, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QDate, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush
 
 # ── Couleurs ──────────────────────────────────────────────────────────────────
@@ -454,6 +454,172 @@ class RelanceDialog(QDialog):
             "message":    self.msg_input.toPlainText(),
             "simulation": self.sim_mode,
         }
+
+# ── Chat IA ───────────────────────────────────────────────────────────────────
+class ChatWorker(QThread):
+    response_ready = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, message: str):
+        super().__init__()
+        self.message = message
+
+    def run(self):
+        try:
+            from services.context_service import build_nudge_context
+            from services.openclaw_service import ask_sync
+            context = build_nudge_context()
+            reply   = ask_sync(self.message, context)
+            self.response_ready.emit(reply)
+        except Exception as exc:
+            self.error_occurred.emit(str(exc))
+
+
+class ChatDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Assistant IA — Nudge")
+        self.setMinimumSize(520, 620)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        self._worker = None
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # En-tête
+        header = QFrame()
+        header.setStyleSheet(f"QFrame {{ background: {ACCENT}; border-radius: 0; }}")
+        header.setFixedHeight(52)
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(20, 0, 20, 0)
+        title_lbl = QLabel("Assistant IA")
+        title_lbl.setStyleSheet("color: white; font-size: 15px; font-weight: 800; border: none;")
+        powered_lbl = QLabel("via OpenClaw")
+        powered_lbl.setStyleSheet("color: rgba(255,255,255,0.55); font-size: 11px; border: none;")
+        hl.addWidget(title_lbl)
+        hl.addStretch()
+        hl.addWidget(powered_lbl)
+        lay.addWidget(header)
+
+        # Zone de messages
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {BG}; }}")
+        self.msg_container = QWidget()
+        self.msg_container.setStyleSheet(f"background: {BG};")
+        self.msg_layout = QVBoxLayout(self.msg_container)
+        self.msg_layout.setContentsMargins(16, 16, 16, 16)
+        self.msg_layout.setSpacing(10)
+        self.msg_layout.addStretch()
+        self.scroll.setWidget(self.msg_container)
+        lay.addWidget(self.scroll, stretch=1)
+
+        # Barre de saisie
+        bar = QFrame()
+        bar.setStyleSheet(f"QFrame {{ background: {SURFACE}; border-top: 1.5px solid {BORDER}; }}")
+        bar.setFixedHeight(66)
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(12, 12, 12, 12)
+        bl.setSpacing(8)
+
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("Posez une question sur vos tâches, projets, retards…")
+        self.input.setStyleSheet(f"""
+            QLineEdit {{
+                background: {SURFACE2}; border: 1.5px solid {BORDER};
+                border-radius: 20px; padding: 8px 16px;
+                font-size: 13px; color: {TEXT};
+            }}
+            QLineEdit:focus {{ border-color: {ACCENT}; }}
+        """)
+        self.input.returnPressed.connect(self._send)
+
+        self.send_btn = QPushButton("Envoyer")
+        self.send_btn.setFixedHeight(38)
+        self.send_btn.setMinimumWidth(90)
+        self.send_btn.setStyleSheet(btn_style())
+        self.send_btn.clicked.connect(self._send)
+
+        bl.addWidget(self.input)
+        bl.addWidget(self.send_btn)
+        lay.addWidget(bar)
+
+        self._add_bubble(
+            "Bonjour ! Je suis votre assistant Nudge.\n"
+            "Posez-moi une question sur vos tâches, projets ou priorités.",
+            is_user=False,
+        )
+
+    def _add_bubble(self, text: str, is_user: bool) -> None:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+
+        bubble = QFrame()
+        bubble.setStyleSheet(f"""
+            QFrame {{
+                background: {ACCENT if is_user else SURFACE};
+                border-radius: 16px;
+                border: {"none" if is_user else f"1px solid {BORDER}"};
+            }}
+        """)
+        bubble.setMaximumWidth(410)
+        bl = QVBoxLayout(bubble)
+        bl.setContentsMargins(14, 10, 14, 10)
+
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lbl.setStyleSheet(f"""
+            color: {"white" if is_user else TEXT};
+            font-size: 13px; background: transparent; border: none;
+        """)
+        bl.addWidget(lbl)
+
+        if is_user:
+            row.addStretch()
+            row.addWidget(bubble)
+        else:
+            row.addWidget(bubble)
+            row.addStretch()
+
+        self.msg_layout.insertLayout(self.msg_layout.count() - 1, row)
+        QTimer.singleShot(30, self._scroll_bottom)
+
+    def _scroll_bottom(self) -> None:
+        sb = self.scroll.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _set_busy(self, busy: bool) -> None:
+        self.send_btn.setEnabled(not busy)
+        self.input.setEnabled(not busy)
+        self.send_btn.setText("…" if busy else "Envoyer")
+
+    def _send(self) -> None:
+        text = self.input.text().strip()
+        if not text or self._worker is not None:
+            return
+        self.input.clear()
+        self._add_bubble(text, is_user=True)
+        self._set_busy(True)
+
+        self._worker = ChatWorker(text)
+        self._worker.response_ready.connect(self._on_reply)
+        self._worker.error_occurred.connect(self._on_error)
+        self._worker.finished.connect(self._on_done)
+        self._worker.start()
+
+    def _on_reply(self, reply: str) -> None:
+        self._add_bubble(reply, is_user=False)
+
+    def _on_error(self, err: str) -> None:
+        self._add_bubble(f"Erreur : {err}", is_user=False)
+
+    def _on_done(self) -> None:
+        self._worker = None
+        self._set_busy(False)
+        self.input.setFocus()
+
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 class OnboardingDialog(QDialog):
@@ -1527,6 +1693,10 @@ class MainWindow(QMainWindow):
         config_btn.setStyleSheet(btn_style(INFO_L, INFO))
         config_btn.clicked.connect(self.show_smtp_config)
 
+        chat_btn = QPushButton("Assistant IA")
+        chat_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
+        chat_btn.clicked.connect(self.show_chat)
+
         self.relance_btn = QPushButton("Relancer par mail")
         self.relance_btn.setStyleSheet(btn_style())
         self.relance_btn.clicked.connect(self.on_relance_global)
@@ -1535,6 +1705,7 @@ class MainWindow(QMainWindow):
         tb_lay.addStretch()
         tb_lay.addWidget(guide_btn)
         tb_lay.addWidget(config_btn)
+        tb_lay.addWidget(chat_btn)
         tb_lay.addWidget(self.relance_btn)
 
         content_lay.addWidget(topbar)
@@ -1615,6 +1786,10 @@ class MainWindow(QMainWindow):
             responsables.append(new_resp)
             self.refresh_all()
 
+    def show_chat(self):
+        dlg = ChatDialog(self)
+        dlg.exec()
+
     def show_smtp_config(self):
         dlg = SmtpConfigDialog(self)
         dlg.exec()
@@ -1635,7 +1810,27 @@ class MainWindow(QMainWindow):
             self.task_area.show_home()
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+def _start_api_server():
+    import threading
+    import urllib.request
+    import uvicorn
+    from config.settings import API_HOST, API_PORT
+
+    # Ne pas démarrer si l'API est déjà active (ex : lancée par run_nudge.py)
+    try:
+        urllib.request.urlopen(f"http://{API_HOST}:{API_PORT}/health", timeout=1)
+        return
+    except Exception:
+        pass
+
+    def _run():
+        uvicorn.run("api.app:app", host=API_HOST, port=API_PORT, log_level="warning")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 if __name__ == "__main__":
+    _start_api_server()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = MainWindow()

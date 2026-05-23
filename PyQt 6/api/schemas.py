@@ -15,3 +15,12 @@ class MailPreviewRequest(BaseModel):
 class MailPreviewResponse(BaseModel):
     subject: str
     body: str
+
+
+class AssistantChatRequest(BaseModel):
+    message: str
+    context: Optional[str] = None
+
+
+class AssistantChatResponse(BaseModel):
+    reply: str

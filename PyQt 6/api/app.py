@@ -2,11 +2,16 @@ from datetime import date
 from fastapi import FastAPI, Depends, HTTPException, Query
 
 from api.auth import verify_token
-from api.schemas import ManualReminderRequest, MailPreviewRequest, MailPreviewResponse
+from api.schemas import (
+    ManualReminderRequest, MailPreviewRequest, MailPreviewResponse,
+    AssistantChatRequest, AssistantChatResponse,
+)
 import services.project_service as project_service
 import services.task_service as task_service
 import services.relance_service as relance_service
 import services.mail_service as mail_service
+import services.openclaw_service as openclaw_service
+from services.context_service import build_nudge_context
 from database.db import init_db
 
 init_db()
@@ -25,6 +30,7 @@ def _is_late(task: dict) -> bool:
         return (date.fromisoformat(task["echeance"]) - date.today()).days < 0
     except (ValueError, TypeError):
         return False
+
 
 
 @app.get("/health", tags=["System"])
@@ -74,3 +80,18 @@ async def post_mail_preview(body: MailPreviewRequest):
     final_body = body.custom_body if body.custom_body else built_body
 
     return MailPreviewResponse(subject=subject, body=final_body)
+
+
+@app.post("/assistant/chat", tags=["Assistant"], dependencies=[Depends(verify_token)], response_model=AssistantChatResponse)
+async def assistant_chat(body: AssistantChatRequest):
+    """
+    Récupère le contexte Nudge (tâches, projets, retards, priorités) depuis la base,
+    puis appelle OpenClaw avec ce contexte + le message utilisateur.
+    Le token OpenClaw reste côté serveur — le frontend ne le voit jamais.
+    """
+    nudge_context = build_nudge_context()
+    try:
+        reply = await openclaw_service.ask(body.message, nudge_context)
+        return AssistantChatResponse(reply=reply)
+    except openclaw_service.OpenClawError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
