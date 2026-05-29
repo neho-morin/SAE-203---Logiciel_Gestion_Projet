@@ -23,10 +23,11 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QComboBox, QDateEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QFrame, QScrollArea, QDialog,
     QDialogButtonBox, QFormLayout, QTextEdit, QMessageBox, QStackedWidget,
-    QGridLayout, QSizePolicy, QSpacerItem, QSpinBox, QCheckBox
+    QGridLayout, QSizePolicy, QSpacerItem, QSpinBox, QCheckBox,
+    QToolButton, QMenu,
 )
 from PyQt6.QtCore import Qt, QDate, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush
+from PyQt6.QtGui import QFont, QColor, QPalette, QPainter, QPen, QBrush, QAction
 
 # ── Couleurs ──────────────────────────────────────────────────────────────────
 BG         = "#f5f3ef"
@@ -165,6 +166,36 @@ def input_style():
             border-color: {ACCENT};
         }}
         QComboBox::drop-down {{ border: none; width: 24px; }}
+    """
+
+def _menu_btn_style(bg=SURFACE2, fg=TEXT):
+    """Style pour les QToolButton avec menu déroulant dans la topbar."""
+    return f"""
+        QToolButton {{
+            background: {bg}; color: {fg};
+            border: 1.5px solid {BORDER}; border-radius: 8px;
+            padding: 7px 14px; font-weight: 700; font-size: 12px;
+        }}
+        QToolButton:hover {{ background: {BORDER}; }}
+        QToolButton:pressed {{ background: {BORDER}; }}
+        QToolButton::menu-indicator {{ image: none; width: 0; }}
+    """
+
+def _menu_style():
+    """Style pour les QMenu déroulants."""
+    return f"""
+        QMenu {{
+            background: {SURFACE}; border: 1.5px solid {BORDER};
+            border-radius: 8px; padding: 4px 0;
+        }}
+        QMenu::item {{
+            padding: 8px 22px 8px 14px; border-radius: 6px;
+            font-size: 13px; color: {TEXT}; margin: 1px 4px;
+        }}
+        QMenu::item:selected {{ background: {ACCENT_L}; color: {ACCENT}; }}
+        QMenu::separator {{
+            background: {BORDER}; height: 1px; margin: 4px 10px;
+        }}
     """
 
 # ── Widgets réutilisables ─────────────────────────────────────────────────────
@@ -2489,25 +2520,47 @@ class MainWindow(QMainWindow):
         guide_btn.setStyleSheet(btn_style(BORDER, TEXT))
         guide_btn.clicked.connect(self.show_onboarding)
 
-        self.config_btn = QPushButton("Config. mail")
-        self.config_btn.setStyleSheet(btn_style(INFO_L, INFO))
-        self.config_btn.clicked.connect(self.show_smtp_config)
+        # ── Menu "Actions" ────────────────────────────────────────────────────
+        self._actions_menu_btn = QToolButton()
+        self._actions_menu_btn.setText("Actions ▾")
+        self._actions_menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._actions_menu_btn.setStyleSheet(_menu_btn_style())
+        _actions_menu = QMenu(self._actions_menu_btn)
+        _actions_menu.setStyleSheet(_menu_style())
+        self._action_chat    = _actions_menu.addAction("Assistant IA")
+        self._action_chat.triggered.connect(self.show_chat)
+        self._action_relance = _actions_menu.addAction("Relancer par mail")
+        self._action_relance.triggered.connect(self.on_relance_global)
+        self._actions_menu_btn.setMenu(_actions_menu)
 
-        self.relance_config_btn = QPushButton("Config. relances")
-        self.relance_config_btn.setStyleSheet(btn_style(WARNING_L, WARNING))
-        self.relance_config_btn.clicked.connect(self.show_relance_config)
+        # ── Menu "Configuration" ──────────────────────────────────────────────
+        self._config_menu_btn = QToolButton()
+        self._config_menu_btn.setText("Configuration ▾")
+        self._config_menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._config_menu_btn.setStyleSheet(_menu_btn_style())
+        _config_menu = QMenu(self._config_menu_btn)
+        _config_menu.setStyleSheet(_menu_style())
+        self._action_smtp        = _config_menu.addAction("Config. mail")
+        self._action_smtp.triggered.connect(self.show_smtp_config)
+        self._action_relance_cfg = _config_menu.addAction("Config. relances")
+        self._action_relance_cfg.triggered.connect(self.show_relance_config)
+        _config_menu.addSeparator()
+        self._action_openclaw_cfg = _config_menu.addAction("Config. OpenClaw")
+        self._action_openclaw_cfg.triggered.connect(self.show_openclaw_config)
+        self._config_menu_btn.setMenu(_config_menu)
 
-        self.chat_btn = QPushButton("Assistant IA")
-        self.chat_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
-        self.chat_btn.clicked.connect(self.show_chat)
-
-        self.relance_btn = QPushButton("Relancer par mail")
-        self.relance_btn.setStyleSheet(btn_style())
-        self.relance_btn.clicked.connect(self.on_relance_global)
-
-        self.users_btn = QPushButton("Comptes")
-        self.users_btn.setStyleSheet(btn_style(SURFACE2, TEXT, BORDER))
-        self.users_btn.clicked.connect(self.show_user_management)
+        # ── Menu "Administration" ─────────────────────────────────────────────
+        self._admin_menu_btn = QToolButton()
+        self._admin_menu_btn.setText("Administration ▾")
+        self._admin_menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._admin_menu_btn.setStyleSheet(_menu_btn_style())
+        _admin_menu = QMenu(self._admin_menu_btn)
+        _admin_menu.setStyleSheet(_menu_style())
+        self._action_diag  = _admin_menu.addAction("Diagnostic")
+        self._action_diag.triggered.connect(self.show_diagnostic)
+        self._action_users = _admin_menu.addAction("Comptes")
+        self._action_users.triggered.connect(self.show_user_management)
+        self._admin_menu_btn.setMenu(_admin_menu)
 
         # ── Badge de rôle + bouton Déconnexion ───────────────────────────────
         role = self._session.role if self._session else "lecteur"
@@ -2536,11 +2589,9 @@ class MainWindow(QMainWindow):
         tb_lay.addWidget(self.global_search)
         tb_lay.addStretch()
         tb_lay.addWidget(guide_btn)
-        tb_lay.addWidget(self.config_btn)
-        tb_lay.addWidget(self.relance_config_btn)
-        tb_lay.addWidget(self.chat_btn)
-        tb_lay.addWidget(self.relance_btn)
-        tb_lay.addWidget(self.users_btn)
+        tb_lay.addWidget(self._actions_menu_btn)
+        tb_lay.addWidget(self._config_menu_btn)
+        tb_lay.addWidget(self._admin_menu_btn)
         tb_lay.addSpacing(10)
         tb_lay.addWidget(username_lbl)
         tb_lay.addWidget(self.role_badge)
@@ -2590,13 +2641,32 @@ class MainWindow(QMainWindow):
 
     def _apply_permissions(self) -> None:
         s = self._session
+
         self.sidebar.apply_permissions(s)
         self.task_area.add_task_btn.setVisible(s.can(CREATE_TASK) if s else False)
-        self.relance_btn.setVisible(s.can(SEND_REMINDERS) if s else False)
-        self.config_btn.setVisible(s.can(CONFIGURE_SMTP) if s else False)
-        self.relance_config_btn.setVisible(s.can(CONFIGURE_REMINDERS) if s else False)
-        self.chat_btn.setVisible(s.can(USE_AI_ASSISTANT) if s else False)
-        self.users_btn.setVisible(s.can(MANAGE_USERS) if s else False)
+
+        # ── Permissions menu Actions ──────────────────────────────────────────
+        can_chat    = s.can(USE_AI_ASSISTANT) if s else False
+        can_relance = s.can(SEND_REMINDERS)   if s else False
+        self._action_chat.setVisible(can_chat)
+        self._action_relance.setVisible(can_relance)
+        self._actions_menu_btn.setVisible(can_chat or can_relance)
+
+        # ── Permissions menu Configuration ────────────────────────────────────
+        can_smtp    = s.can(CONFIGURE_SMTP)       if s else False
+        can_rlcfg   = s.can(CONFIGURE_REMINDERS)  if s else False
+        can_oc_cfg  = s.can(CONFIGURE_SMTP)       if s else False  # même niveau que smtp
+        self._action_smtp.setVisible(can_smtp)
+        self._action_relance_cfg.setVisible(can_rlcfg)
+        self._action_openclaw_cfg.setVisible(can_oc_cfg)
+        self._config_menu_btn.setVisible(can_smtp or can_rlcfg or can_oc_cfg)
+
+        # ── Permissions menu Administration ───────────────────────────────────
+        can_users = s.can(MANAGE_USERS) if s else False
+        self._action_users.setVisible(can_users)
+        # Diagnostic toujours visible (outil de support)
+        self._action_diag.setVisible(True)
+        self._admin_menu_btn.setVisible(True)
 
     def _on_logout(self) -> None:
         reply = QMessageBox.question(
@@ -2628,6 +2698,14 @@ class MainWindow(QMainWindow):
 
     def show_onboarding(self):
         dlg = OnboardingDialog(self)
+        dlg.exec()
+
+    def show_diagnostic(self):
+        dlg = DiagnosticDialog(self)
+        dlg.exec()
+
+    def show_openclaw_config(self):
+        dlg = OpenClawConfigDialog(self)
         dlg.exec()
 
     def on_project_selected(self, pid):
@@ -2765,11 +2843,425 @@ class MainWindow(QMainWindow):
         else:
             self.task_area.show_home()
 
+# ── Stockage de l'erreur de démarrage de l'API (pour la page diagnostic) ─────
+_API_START_ERROR: list[str] = []
+
+
+# ── Configuration OpenClaw ────────────────────────────────────────────────────
+class OpenClawTestWorker(QThread):
+    """Thread de test de connexion OpenClaw (ne bloque pas l'interface)."""
+    finished = pyqtSignal(bool, float, str)  # success, latency_ms, message
+
+    def run(self):
+        try:
+            from services.openclaw_service import test_connection
+            ok, latency, msg = test_connection()
+            self.finished.emit(ok, latency, msg)
+        except Exception as exc:
+            self.finished.emit(False, 0.0, str(exc))
+
+
+class OpenClawConfigDialog(QDialog):
+    """
+    Fenêtre de configuration de l'intégration OpenClaw.
+    Sauvegarde dans ~/.nudge_openclaw.json — jamais dans Git.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent, _DIALOG_FLAGS)
+        self.setWindowTitle("Configuration OpenClaw — Nudge")
+        self.setMinimumWidth(540)
+        self.setStyleSheet(GLOBAL_STYLE + input_style())
+        self._test_worker = None
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(14)
+
+        # ── Titre ─────────────────────────────────────────────────────────────
+        title = QLabel("Configuration OpenClaw")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {TEXT};")
+        lay.addWidget(title)
+
+        sub = QLabel("Les paramètres sont stockés dans ~/.nudge_openclaw.json — aucun secret dans Git.")
+        sub.setStyleSheet(f"font-size: 11px; color: {MUTED};")
+        sub.setWordWrap(True)
+        lay.addWidget(sub)
+
+        # ── Formulaire ────────────────────────────────────────────────────────
+        form = QFormLayout()
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._enabled = QCheckBox("Activer l'intégration OpenClaw")
+        self._enabled.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
+        form.addRow("", self._enabled)
+
+        self._gateway_url = QLineEdit()
+        self._gateway_url.setPlaceholderText("http://127.0.0.1:3000")
+        form.addRow("URL du gateway", self._gateway_url)
+
+        self._endpoint = QLineEdit()
+        self._endpoint.setPlaceholderText("/chat/completions")
+        form.addRow("Endpoint", self._endpoint)
+
+        # Token + bouton afficher/masquer
+        token_row = QHBoxLayout()
+        token_row.setSpacing(6)
+        self._token = QLineEdit()
+        self._token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._token.setPlaceholderText("sk-…  (stocké localement, jamais dans Git)")
+        self._toggle_token_btn = QPushButton("Afficher")
+        self._toggle_token_btn.setFixedWidth(76)
+        self._toggle_token_btn.setStyleSheet(btn_style(SURFACE2, TEXT, BORDER))
+        self._toggle_token_btn.clicked.connect(self._toggle_token_visibility)
+        token_row.addWidget(self._token)
+        token_row.addWidget(self._toggle_token_btn)
+        form.addRow("Token API", token_row)
+
+        self._bot_name = QLineEdit()
+        self._bot_name.setPlaceholderText("nudge-bot")
+        form.addRow("Nom du bot / modèle", self._bot_name)
+
+        self._timeout = QSpinBox()
+        self._timeout.setRange(5, 300)
+        self._timeout.setSuffix(" s")
+        form.addRow("Timeout", self._timeout)
+
+        self._retries = QSpinBox()
+        self._retries.setRange(0, 10)
+        form.addRow("Tentatives", self._retries)
+
+        self._debug = QCheckBox("Mode debug (logs détaillés)")
+        self._debug.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
+        form.addRow("", self._debug)
+
+        lay.addLayout(form)
+
+        # ── Zone de test de connexion ─────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {BORDER};")
+        lay.addWidget(sep)
+
+        test_row = QHBoxLayout()
+        test_row.setSpacing(8)
+        self._test_btn = QPushButton("Tester la connexion")
+        self._test_btn.setStyleSheet(btn_style(INFO_L, INFO))
+        self._test_btn.clicked.connect(self._run_test)
+        test_row.addWidget(self._test_btn)
+        test_row.addStretch()
+        lay.addLayout(test_row)
+
+        self._test_result = QLabel("")
+        self._test_result.setWordWrap(True)
+        self._test_result.setStyleSheet(f"font-size: 12px; color: {MUTED};")
+        lay.addWidget(self._test_result)
+
+        # ── Boutons de contrôle ───────────────────────────────────────────────
+        ctrl = QHBoxLayout()
+        ctrl.setSpacing(8)
+        reset_btn = QPushButton("Réinitialiser")
+        reset_btn.setStyleSheet(btn_style(SURFACE2, TEXT, BORDER))
+        reset_btn.clicked.connect(self._reset)
+        save_btn = QPushButton("Sauvegarder")
+        save_btn.setStyleSheet(btn_style())
+        save_btn.clicked.connect(self._save)
+        close_btn = QPushButton("Fermer")
+        close_btn.setStyleSheet(btn_style(BORDER, TEXT))
+        close_btn.clicked.connect(self.accept)
+        ctrl.addWidget(reset_btn)
+        ctrl.addStretch()
+        ctrl.addWidget(save_btn)
+        ctrl.addWidget(close_btn)
+        lay.addLayout(ctrl)
+
+        self._load()
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _load(self):
+        from config.openclaw_config import load as _load_cfg
+        cfg = _load_cfg()
+        self._enabled.setChecked(bool(cfg.get("enabled", True)))
+        self._gateway_url.setText(cfg.get("gateway_url", ""))
+        self._endpoint.setText(cfg.get("endpoint", "/chat/completions"))
+        self._token.setText(cfg.get("api_token", ""))
+        self._bot_name.setText(cfg.get("bot_name", "nudge-bot"))
+        self._timeout.setValue(int(cfg.get("timeout_seconds", 30)))
+        self._retries.setValue(int(cfg.get("retries", 2)))
+        self._debug.setChecked(bool(cfg.get("debug", False)))
+
+    def _save(self):
+        from config.openclaw_config import save as _save_cfg
+        cfg = {
+            "enabled":          self._enabled.isChecked(),
+            "gateway_url":      self._gateway_url.text().strip(),
+            "endpoint":         self._endpoint.text().strip() or "/chat/completions",
+            "api_token":        self._token.text(),
+            "bot_name":         self._bot_name.text().strip() or "nudge-bot",
+            "timeout_seconds":  self._timeout.value(),
+            "retries":          self._retries.value(),
+            "debug":            self._debug.isChecked(),
+        }
+        _save_cfg(cfg)
+        QMessageBox.information(self, "Sauvegardé", "Configuration OpenClaw sauvegardée.")
+
+    def _reset(self):
+        from config.openclaw_config import DEFAULTS
+        reply = QMessageBox.question(
+            self, "Réinitialiser",
+            "Réinitialiser tous les champs aux valeurs par défaut ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._enabled.setChecked(bool(DEFAULTS["enabled"]))
+        self._gateway_url.setText(DEFAULTS["gateway_url"])
+        self._endpoint.setText(DEFAULTS["endpoint"])
+        self._token.setText(DEFAULTS["api_token"])
+        self._bot_name.setText(DEFAULTS["bot_name"])
+        self._timeout.setValue(int(DEFAULTS["timeout_seconds"]))
+        self._retries.setValue(int(DEFAULTS["retries"]))
+        self._debug.setChecked(bool(DEFAULTS["debug"]))
+        self._test_result.setText("")
+
+    def _toggle_token_visibility(self):
+        is_hidden = self._token.echoMode() == QLineEdit.EchoMode.Password
+        self._token.setEchoMode(
+            QLineEdit.EchoMode.Normal if is_hidden else QLineEdit.EchoMode.Password
+        )
+        self._toggle_token_btn.setText("Masquer" if is_hidden else "Afficher")
+
+    def _run_test(self):
+        if self._test_worker is not None:
+            return
+        self._test_btn.setEnabled(False)
+        self._test_btn.setText("Test en cours…")
+        self._test_result.setStyleSheet(f"font-size: 12px; color: {MUTED};")
+        self._test_result.setText("Connexion en cours…")
+
+        self._test_worker = OpenClawTestWorker()
+        self._test_worker.finished.connect(self._on_test_result)
+        self._test_worker.start()
+
+    def _on_test_result(self, ok: bool, latency: float, msg: str):
+        self._test_worker = None
+        self._test_btn.setEnabled(True)
+        self._test_btn.setText("Tester la connexion")
+        color = ACCENT if ok else DANGER
+        self._test_result.setStyleSheet(f"font-size: 12px; color: {color};")
+        latency_str = f"  (temps de réponse : {latency:.0f} ms)" if latency > 0 else ""
+        self._test_result.setText(f"{msg}{latency_str}")
+
+
+# ── Fenêtre de diagnostic ─────────────────────────────────────────────────────
+class DiagnosticDialog(QDialog):
+    """
+    Fenêtre de diagnostic système :
+    - état de l'API interne
+    - versions et chemins
+    - bouton relancer l'API
+    - bouton copier les infos
+    - bouton ouvrir le dossier de configuration
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent, _DIALOG_FLAGS)
+        self.setWindowTitle("Diagnostic — Nudge")
+        self.setMinimumWidth(560)
+        self.setStyleSheet(f"background: {BG}; color: {TEXT};")
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(14)
+
+        title = QLabel("Diagnostic système")
+        title.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {TEXT};")
+        lay.addWidget(title)
+
+        self._info = QTextEdit()
+        self._info.setReadOnly(True)
+        self._info.setMinimumHeight(280)
+        self._info.setStyleSheet(f"""
+            QTextEdit {{
+                background: {SURFACE}; border: 1.5px solid {BORDER};
+                border-radius: 8px; padding: 10px; font-family: monospace;
+                font-size: 12px; color: {TEXT};
+            }}
+        """)
+        lay.addWidget(self._info)
+
+        btns = QHBoxLayout()
+        btns.setSpacing(8)
+
+        refresh_btn = QPushButton("Actualiser")
+        refresh_btn.setStyleSheet(btn_style(INFO_L, INFO))
+        refresh_btn.clicked.connect(self._refresh)
+
+        restart_btn = QPushButton("Relancer l'API")
+        restart_btn.setStyleSheet(btn_style(ACCENT_L, ACCENT))
+        restart_btn.clicked.connect(self._restart_api)
+
+        self._diag_test_oc_btn = QPushButton("Tester OpenClaw")
+        self._diag_test_oc_btn.setStyleSheet(btn_style(WARNING_L, WARNING))
+        self._diag_test_oc_btn.clicked.connect(self._test_openclaw)
+
+        copy_btn = QPushButton("Copier les infos")
+        copy_btn.setStyleSheet(btn_style(SURFACE2, TEXT, BORDER))
+        copy_btn.clicked.connect(self._copy_info)
+
+        open_dir_btn = QPushButton("Ouvrir config")
+        open_dir_btn.setStyleSheet(btn_style(SURFACE2, TEXT, BORDER))
+        open_dir_btn.clicked.connect(self._open_config_dir)
+
+        close_btn = QPushButton("Fermer")
+        close_btn.setStyleSheet(btn_style(BORDER, TEXT))
+        close_btn.clicked.connect(self.accept)
+
+        for b in (refresh_btn, restart_btn, self._diag_test_oc_btn, copy_btn, open_dir_btn, close_btn):
+            btns.addWidget(b)
+        lay.addLayout(btns)
+
+        # Zone résultat du test OpenClaw
+        self._oc_test_lbl = QLabel("")
+        self._oc_test_lbl.setWordWrap(True)
+        self._oc_test_lbl.setStyleSheet(f"font-size: 11px; color: {MUTED};")
+        lay.addWidget(self._oc_test_lbl)
+
+        self._diag_oc_worker = None
+        self._refresh()
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _check_api(self) -> tuple[bool, str]:
+        """Retourne (ok, url) en testant le health endpoint."""
+        import urllib.request as _ur
+        from config.settings import API_HOST, API_PORT
+        url = f"http://{API_HOST}:{API_PORT}/health"
+        try:
+            _ur.urlopen(url, timeout=2)
+            return True, url
+        except Exception:
+            return False, url
+
+    def _refresh(self):
+        import sys as _sys
+        import os as _os
+        from pathlib import Path as _Path
+
+        api_ok, api_url = self._check_api()
+        api_status = f"OK  ({api_url})" if api_ok else f"HORS LIGNE  ({api_url})"
+
+        config_dir  = _Path(_os.path.expanduser("~"))
+        config_file = config_dir / ".nudge_config.json"
+
+        last_error = "\n  ".join(_API_START_ERROR) if _API_START_ERROR else "Aucune"
+
+        # ── Section OpenClaw ──────────────────────────────────────────────────
+        try:
+            from config.openclaw_config import load as _oc_load, mask_token as _mask, config_file_path as _oc_path
+            oc_cfg     = _oc_load()
+            oc_enabled = oc_cfg.get("enabled", True)
+            oc_url     = oc_cfg.get("gateway_url", "") or "(non configuré)"
+            oc_ep      = oc_cfg.get("endpoint", "")
+            oc_token   = _mask(oc_cfg.get("api_token", ""))
+            oc_config_file = _oc_path()
+            oc_config_present = oc_config_file.exists()
+        except Exception:
+            oc_enabled = False
+            oc_url = oc_ep = "(erreur chargement config)"
+            oc_token = "—"
+            oc_config_present = False
+
+        lines = [
+            f"Python         : {_sys.version.split()[0]}",
+            f"Exécutable     : {_sys.executable}",
+            f"Répertoire app : {_Path(__file__).parent}",
+            f"Config (~)     : {config_dir}",
+            f"nudge_config   : {'présent' if config_file.exists() else 'absent'}",
+            f"openclaw_cfg   : {'présent' if oc_config_present else 'absent'}",
+            f"",
+            f"── API interne ──",
+            f"État           : {api_status}",
+            f"Dernière erreur :",
+            f"  {last_error}",
+            f"",
+            f"── Modules ──",
+            f"uvicorn        : {'OK' if self._module_available('uvicorn') else 'ABSENT'}",
+            f"fastapi        : {'OK' if self._module_available('fastapi') else 'ABSENT'}",
+            f"PyQt6          : {'OK' if self._module_available('PyQt6') else 'ABSENT'}",
+            f"APScheduler    : {'OK' if self._module_available('apscheduler') else 'ABSENT'}",
+            f"",
+            f"── OpenClaw ──",
+            f"Activé         : {'oui' if oc_enabled else 'non'}",
+            f"Gateway URL    : {oc_url}",
+            f"Endpoint       : {oc_ep}",
+            f"Token API      : {oc_token}",
+        ]
+        self._info.setPlainText("\n".join(lines))
+
+    @staticmethod
+    def _module_available(name: str) -> bool:
+        import importlib.util
+        return importlib.util.find_spec(name) is not None
+
+    def _restart_api(self):
+        _start_api_server()
+        QMessageBox.information(
+            self, "API", "Tentative de démarrage de l'API lancée.\nActualisez dans quelques secondes."
+        )
+        self._refresh()
+
+    def _test_openclaw(self):
+        if self._diag_oc_worker is not None:
+            return
+        self._diag_test_oc_btn.setEnabled(False)
+        self._diag_test_oc_btn.setText("Test…")
+        self._oc_test_lbl.setStyleSheet(f"font-size: 11px; color: {MUTED};")
+        self._oc_test_lbl.setText("Test OpenClaw en cours…")
+
+        self._diag_oc_worker = OpenClawTestWorker()
+        self._diag_oc_worker.finished.connect(self._on_oc_test_done)
+        self._diag_oc_worker.start()
+
+    def _on_oc_test_done(self, ok: bool, latency: float, msg: str):
+        self._diag_oc_worker = None
+        self._diag_test_oc_btn.setEnabled(True)
+        self._diag_test_oc_btn.setText("Tester OpenClaw")
+        color = ACCENT if ok else DANGER
+        self._oc_test_lbl.setStyleSheet(f"font-size: 11px; color: {color};")
+        lat = f"  ({latency:.0f} ms)" if latency > 0 else ""
+        self._oc_test_lbl.setText(f"OpenClaw : {msg}{lat}")
+
+    def _copy_info(self):
+        # On s'assure que le token ne figure pas en clair dans les infos copiées
+        QApplication.clipboard().setText(self._info.toPlainText())
+        QMessageBox.information(self, "Copié", "Les informations de diagnostic ont été copiées.\n(Token masqué dans la copie.)")
+
+    def _open_config_dir(self):
+        import os as _os
+        config_dir = _os.path.expanduser("~")
+        if sys.platform == "win32":
+            _os.startfile(config_dir)
+        else:
+            import subprocess as _sp
+            _sp.Popen(["xdg-open", config_dir])
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 def _start_api_server():
     import threading
     import urllib.request
-    import uvicorn
+
+    # Vérifier que uvicorn est disponible avant de tenter le démarrage
+    try:
+        import uvicorn
+    except ImportError as exc:
+        _API_START_ERROR.clear()
+        _API_START_ERROR.append(f"ModuleNotFoundError: {exc}")
+        return  # API désactivée — l'interface reste pleinement fonctionnelle
+
     from config.settings import API_HOST, API_PORT
 
     # Ne pas démarrer si l'API est déjà active (ex : lancée par run_nudge.py)
@@ -2780,7 +3272,11 @@ def _start_api_server():
         pass
 
     def _run():
-        uvicorn.run("api.app:app", host=API_HOST, port=API_PORT, log_level="warning")
+        try:
+            uvicorn.run("api.app:app", host=API_HOST, port=API_PORT, log_level="warning")
+        except Exception as exc:
+            _API_START_ERROR.clear()
+            _API_START_ERROR.append(str(exc))
 
     threading.Thread(target=_run, daemon=True).start()
 
