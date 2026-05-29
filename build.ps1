@@ -4,75 +4,99 @@
 #   .\build.ps1
 #
 # Produit : dist\Nudge.exe (build one-file)
-# Nécessite : Python 3 installé et accessible via la commande "python"
+# Necessite : Python 3 installe et accessible via "python"
+
+# Forcer UTF-8 pour eviter les caracteres corrompus dans le terminal
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $ROOT     = $PSScriptRoot
-$PYQT6    = Join-Path $ROOT "PyQt 6"
 $SPEC     = Join-Path $ROOT "Cr. .exe for Windows\Nudge.spec"
 $DIST_EXE = Join-Path $ROOT "dist\Nudge.exe"
 
 Write-Host ""
 Write-Host "=== Build Nudge ===" -ForegroundColor Cyan
-Write-Host "Répertoire : $ROOT"
+Write-Host "Repertoire racine : $ROOT"
+Write-Host "Spec              : $SPEC"
 Write-Host ""
 
-# ── Nettoyage ─────────────────────────────────────────────────────────────────
+# ── 1. Nettoyage ──────────────────────────────────────────────────────────────
 Write-Host "[1/4] Nettoyage des anciens builds..." -ForegroundColor Yellow
 foreach ($dir in @("build", "dist")) {
     $full = Join-Path $ROOT $dir
     if (Test-Path $full) {
         Remove-Item -Recurse -Force $full
-        Write-Host "  Supprimé : $full"
+        Write-Host "  Supprime : $full"
     }
 }
 
-# ── Dépendances ───────────────────────────────────────────────────────────────
+# ── 2. Dependances Python ─────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "[2/4] Installation des dépendances Python..." -ForegroundColor Yellow
+Write-Host "[2/4] Installation des dependances Python..." -ForegroundColor Yellow
+
 python -m pip install --upgrade pip --quiet
-python -m pip install -r (Join-Path $ROOT "requirements.txt") --quiet
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERREUR : pip install a échoué." -ForegroundColor Red
+    Write-Host "ERREUR : pip upgrade a echoue." -ForegroundColor Red
     exit 1
 }
-Write-Host "  Dépendances installées."
 
-# ── PyInstaller ───────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "[3/4] Génération du .exe avec PyInstaller..." -ForegroundColor Yellow
-Write-Host "  Spec : $SPEC"
+python -m pip install -r (Join-Path $ROOT "requirements.txt") --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERREUR : pip install requirements a echoue." -ForegroundColor Red
+    exit 1
+}
 
-# PyInstaller doit être lancé depuis PyQt 6/ car les chemins dans le spec
-# (nudge.py, database/, services/, config/, api/) sont relatifs à ce dossier.
-Push-Location $PYQT6
-try {
-    python -m PyInstaller $SPEC --noconfirm --distpath (Join-Path $ROOT "dist") --workpath (Join-Path $ROOT "build")
+# Installer PyInstaller s'il n'est pas present
+$piExists = python -m PyInstaller --version 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  PyInstaller absent, installation..." -ForegroundColor Yellow
+    python -m pip install pyinstaller --quiet
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "ERREUR : PyInstaller a échoué." -ForegroundColor Red
+        Write-Host "ERREUR : installation de PyInstaller echouee." -ForegroundColor Red
         exit 1
     }
 }
-finally {
-    Pop-Location
+
+Write-Host "  Dependances OK."
+
+# ── 3. Build PyInstaller ──────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "[3/4] Generation du .exe avec PyInstaller..." -ForegroundColor Yellow
+
+# PyInstaller est lance depuis la RACINE du projet.
+# Les chemins dans Nudge.spec utilisent SPECPATH (chemin absolu calcule dans le .spec)
+# donc le repertoire courant n'a pas d'importance.
+python -m PyInstaller $SPEC `
+    --noconfirm `
+    --distpath (Join-Path $ROOT "dist") `
+    --workpath (Join-Path $ROOT "build")
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "ERREUR : PyInstaller a echoue." -ForegroundColor Red
+    Write-Host "Consultez les logs ci-dessus pour identifier la cause."
+    exit 1
 }
 
-# ── Résultat ──────────────────────────────────────────────────────────────────
+# ── 4. Verification du resultat ───────────────────────────────────────────────
 Write-Host ""
-Write-Host "[4/4] Vérification du résultat..." -ForegroundColor Yellow
+Write-Host "[4/4] Verification du resultat..." -ForegroundColor Yellow
+
 if (Test-Path $DIST_EXE) {
     $size = [math]::Round((Get-Item $DIST_EXE).Length / 1MB, 1)
     Write-Host ""
-    Write-Host "Build réussi !" -ForegroundColor Green
+    Write-Host "Build reussi !" -ForegroundColor Green
     Write-Host "  Fichier : $DIST_EXE"
     Write-Host "  Taille  : ${size} Mo"
     Write-Host ""
-    Write-Host "Pour tester :"
+    Write-Host "Pour tester l'executable :"
     Write-Host "  .\dist\Nudge.exe"
 } else {
-    Write-Host "ERREUR : $DIST_EXE non trouvé." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "ERREUR : $DIST_EXE introuvable apres le build." -ForegroundColor Red
     Write-Host "Consultez les logs PyInstaller ci-dessus."
     exit 1
 }
