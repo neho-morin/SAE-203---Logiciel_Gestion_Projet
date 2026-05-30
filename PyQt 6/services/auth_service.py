@@ -67,7 +67,9 @@ class UserSession:
 # ── État global ───────────────────────────────────────────────────────────────
 
 # Contrôlé par NUDGE_AUTH_ENABLED dans le .env
-AUTH_ENABLED: bool = os.getenv("NUDGE_AUTH_ENABLED", "false").lower() == "true"
+# Défaut : true — l'auth est active par défaut (exe et dev sans .env)
+# Pour désactiver en dev : mettre NUDGE_AUTH_ENABLED=false dans .env
+AUTH_ENABLED: bool = os.getenv("NUDGE_AUTH_ENABLED", "true").lower() == "true"
 
 # Session stub (admin fictif) utilisée quand AUTH_ENABLED=false
 _STUB_SESSION = UserSession(

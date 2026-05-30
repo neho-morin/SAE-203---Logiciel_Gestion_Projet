@@ -1,7 +1,21 @@
 import os
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Trouver le .env selon le contexte d'exécution
+if getattr(sys, 'frozen', False):
+    # Exe PyInstaller : chercher .env à côté du .exe (dist/)
+    _env_path = Path(sys.executable).parent / ".env"
+else:
+    # Script Python : .env est à la racine du projet
+    # settings.py → config/ → PyQt 6/ → racine/
+    _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+
+if _env_path.exists():
+    load_dotenv(_env_path)
+else:
+    load_dotenv()  # fallback : python-dotenv cherche dans CWD et dossiers parents
 
 # Base de données
 DATABASE_PATH = os.path.join(os.path.expanduser("~"), "nudge.db")

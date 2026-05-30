@@ -87,6 +87,28 @@ Write-Host "[4/4] Verification du resultat..." -ForegroundColor Yellow
 
 if (Test-Path $DIST_EXE) {
     $size = [math]::Round((Get-Item $DIST_EXE).Length / 1MB, 1)
+
+    # Creer un .env minimal dans dist/ s'il n'en existe pas deja
+    # (permet a l'utilisateur de configurer l'app sans toucher au .env source)
+    $distEnv = Join-Path $ROOT "dist\.env"
+    if (-not (Test-Path $distEnv)) {
+        @"
+# Configuration Nudge - personnalisez selon vos besoins
+# Ce fichier est lu par Nudge.exe au demarrage
+
+# Authentification (true = connexion requise, false = acces direct admin)
+NUDGE_AUTH_ENABLED=true
+
+# Serveur SMTP (pour l'envoi reel de mails)
+# NUDGE_SMTP_USER=votre@email.com
+# NUDGE_SMTP_PASS=motdepasse
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=587
+# NUDGE_SIMULATE=true
+"@ | Set-Content $distEnv -Encoding UTF8
+        Write-Host "  Cree : $distEnv  (personnalisez-le si necessaire)"
+    }
+
     Write-Host ""
     Write-Host "Build reussi !" -ForegroundColor Green
     Write-Host "  Fichier : $DIST_EXE"
